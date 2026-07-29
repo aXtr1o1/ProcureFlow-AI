@@ -75,3 +75,18 @@ class ValidationService:
             "is_valid": len(errors) == 0,
             "errors": errors
         }
+
+    def is_invoice_document(self, invoice_data: Dict) -> bool:
+        """
+        Check whether the extracted document contains the minimum
+        required fields to be considered an invoice.
+        """
+
+        required_fields = [
+            "invoice_number",
+            "vendor_name",
+            "invoice_date",
+            "total_amount"
+        ]
+
+        return all(invoice_data.get(field) for field in required_fields)

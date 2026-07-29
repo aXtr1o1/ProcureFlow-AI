@@ -1,3 +1,4 @@
+import uuid
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.blob_storage_service import BlobStorageService
 from app.services.document_intelligence_service import DocumentIntelligenceService
@@ -30,13 +31,21 @@ async def upload_invoice(file: UploadFile = File(...)):
     try:
 
         # Allow only PDF files
-        if not file.filename.lower().endswith(".pdf"):
+        if (
+            file.content_type != "application/pdf"
+            or not file.filename.lower().endswith(".pdf")
+        ):
             raise HTTPException(
                 status_code=400,
-                detail="Only PDF files are allowed."
+                detail="Only PDF invoice files are supported."
             )
 
-        result = await blob_service.upload_invoice(file)
+        document_id = str(uuid.uuid4())
+
+        result = await blob_service.upload_invoice(
+            document_id=document_id,
+            file=file
+        )
 
         return {
             "success": True,
@@ -44,13 +53,14 @@ async def upload_invoice(file: UploadFile = File(...)):
             "data": result
         }
 
-    except Exception as e:
+    except HTTPException:
+        raise
 
+    except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=str(e)
         )
-
 
 # ==========================================================
 # Get All Uploaded Files
@@ -82,7 +92,7 @@ async def get_all_invoices():
 # ==========================================================
 # Download Invoice
 # ==========================================================
-@router.get("/{blob_name}")
+@router.get("/{blob_name:path}")
 async def download_invoice(blob_name: str):
     """
     Download invoice from Azure Blob Storage.
@@ -109,7 +119,7 @@ async def download_invoice(blob_name: str):
 # ==========================================================
 # Delete Invoice
 # ==========================================================
-@router.delete("/{blob_name}")
+@router.delete("/{blob_name:path}")
 async def delete_invoice(blob_name: str):
     """
     Delete invoice from Azure Blob Storage.
@@ -156,15 +166,25 @@ async def analyze_invoice(
         # Analyze the invoice
         result = document_service.analyze_invoice(file_bytes)
 
-        # Validate the extracted data
         validation_service = ValidationService()
 
+        # Check whether the uploaded PDF is actually an invoice
+        if not validation_service.is_invoice_document(result[0]):
+            raise HTTPException(
+                status_code=422,
+                detail="The uploaded PDF is not a valid invoice."
+            )
+
+        # Validate the extracted invoice data
         validation_result = validation_service.validate_invoice(
             result[0]
         )
 
-        # Print validation result (temporary)
-        print(validation_result)
+        if not validation_result["is_valid"]:
+            raise HTTPException(
+                status_code=422,
+                detail=validation_result["errors"]
+            )
 
         # Continue with saving
         invoice_service = InvoiceService(db)
@@ -203,5 +223,11 @@ async def analyze_invoice(
             "invoice": result[0]
         }
 
+    except HTTPException:
+        raise
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
