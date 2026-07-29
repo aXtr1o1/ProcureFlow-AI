@@ -13,8 +13,10 @@ class MatchingResponse(BaseModel):
 
     is_match: bool
 
-    match_score: int
+    match_score: float
 
     mismatches: List[str]
 
     status: str
+
+    message: str

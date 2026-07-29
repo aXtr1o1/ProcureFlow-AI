@@ -16,7 +16,6 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(invoice_router)
 app.include_router(approval_router)
-app.include_router(invoices.router)
 app.include_router(purchase_orders.router)
 app.include_router(matching.router)
 

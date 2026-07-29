@@ -19,6 +19,7 @@ class ValidationService:
         """
 
         errors: List[str] = []
+        print("Validation Service Executed")
 
         # --------------------------------------------------
         # Invoice Number

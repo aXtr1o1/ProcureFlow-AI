@@ -38,7 +38,7 @@ class BlobStorageService:
 
 
     def _ocr_blob_name(self, document_id: str) -> str:
-        return f"{settings.AZURE_OCR_FOLDER}/{document_id}.txt"
+        return f"{settings.AZURE_OCR_FOLDER}/{document_id}.json"
 
 
     def _summary_blob_name(self, document_id: str) -> str:
@@ -80,25 +80,67 @@ class BlobStorageService:
     # Upload OCR Text
     # --------------------------------------------------
 
-    def upload_ocr_text(
+    def upload_ocr_data(
         self,
         document_id: str,
-        text: str
+        extracted_fields: dict
     ) -> dict:
 
-        blob_name = self._ocr_blob_name(document_id)
+        json_blob = self._ocr_blob_name(document_id)
 
-        blob_client = self.container_client.get_blob_client(blob_name)
+        json_client = self.container_client.get_blob_client(
+            json_blob
+        )
 
-        blob_client.upload_blob(
-            text,
+        # ---------------------------------------
+        # Create OCR Text String
+        # ---------------------------------------
+
+        ocr_text = json.dumps(
+            {
+                "invoiceNumber": extracted_fields.get("invoice_number"),
+                "vendorName": extracted_fields.get("vendor_name"),
+                "invoiceDate": extracted_fields.get("invoice_date"),
+                "currency": extracted_fields.get("currency"),
+                "amount": extracted_fields.get("total_amount"),
+                "items": [
+                    {
+                        "description": item.get("description"),
+                        "quantity": item.get("quantity"),
+                        "price": item.get("unit_price")
+                    }
+                    for item in extracted_fields.get("line_items", [])
+                ]
+            },
+            ensure_ascii=False,
+            separators=(",", ":")
+        )
+
+        # ---------------------------------------
+        # Create JSON document
+        # ---------------------------------------
+
+        json_document = extracted_fields.copy()
+
+        json_document["ocr_text"] = ocr_text
+
+        # ---------------------------------------
+        # Upload JSON
+        # ---------------------------------------
+
+        json_client.upload_blob(
+            json.dumps(
+                json_document,
+                ensure_ascii=False,
+                indent=4
+            ),
             overwrite=True
         )
 
         return {
             "document_id": document_id,
-            "blob_name": blob_name,
-            "blob_url": blob_client.url
+            "json_blob_name": json_blob,
+            "json_blob_url": json_client.url
         }
 
     # --------------------------------------------------
@@ -178,6 +220,7 @@ class BlobStorageService:
         blob_client = self.container_client.get_blob_client(blob_name)
 
         return blob_client.download_blob().readall().decode("utf-8")
+
 
     # --------------------------------------------------
     # Delete Blob

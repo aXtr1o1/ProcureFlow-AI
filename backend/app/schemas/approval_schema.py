@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # ==========================================================
@@ -32,9 +32,14 @@ class ApprovalResponse(BaseModel):
 # ==========================================================
 # Approval History Response
 # ==========================================================
+
 class ApprovalHistoryResponse(BaseModel):
     invoice_id: int
-    status: str
+    reviewer: str
+    decision: str
     remarks: Optional[str]
-    updated_by: str
-    created_at: datetime
+    approved_at: datetime
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )

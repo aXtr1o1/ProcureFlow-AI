@@ -85,6 +85,10 @@ class Invoice(Base):
     blob_name = Column(String(255))
     blob_url = Column(String(1000))
 
+    # Invoice OCR JSON
+    ocr_json_blob_name = Column(String(255), nullable=True)
+    ocr_json_blob_url = Column(String(1000), nullable=True)
+
     processing_status = Column(String(100), default="Uploaded")
 
     created_at = Column(DateTime, default=datetime.utcnow)

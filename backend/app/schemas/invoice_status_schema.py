@@ -8,8 +8,8 @@ from pydantic import BaseModel, ConfigDict
 # Current Invoice Status
 # ==========================================================
 class CurrentInvoiceStatusResponse(BaseModel):
-    invoice_id: int
-    invoice_number: str
+    id: int
+    invoice_number: Optional[str]
     processing_status: str
 
     model_config = ConfigDict(
@@ -24,7 +24,7 @@ class InvoiceStatusResponse(BaseModel):
     invoice_id: int
     status: str
     remarks: Optional[str]
-    updated_by: str
+    updated_by: Optional[str]
     created_at: datetime
 
     model_config = ConfigDict(

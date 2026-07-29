@@ -192,4 +192,7 @@ class DocumentIntelligenceService:
 
             invoices.append(invoice)
 
-        return invoices
+        if invoices:
+            return invoices[0]
+
+        return {}

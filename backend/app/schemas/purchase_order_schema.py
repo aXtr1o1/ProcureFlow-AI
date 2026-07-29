@@ -42,31 +42,18 @@ class PurchaseOrderStatusUpdate(BaseModel):
 # Purchase Order Response
 # ==========================================================
 class PurchaseOrderResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
-
     invoice_id: int
-
     po_number: str
-
     vendor_name: str
-
     customer_name: str
-
     currency: str
-
     subtotal: float
-
     tax: float
-
     total_amount: float
-
     blob_name: Optional[str]
-
     blob_url: Optional[str]
-
     status: str
-
     generated_at: datetime
-
-class Config:
-    orm_mode = True

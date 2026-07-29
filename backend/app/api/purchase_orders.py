@@ -11,12 +11,10 @@ from app.schemas.purchase_order_schema import (
 )
 from app.services.purchase_order_service import PurchaseOrderService
 
-
 router = APIRouter(
     prefix="/purchase-orders",
     tags=["Purchase Orders"]
 )
-
 
 # ==========================================================
 # Create Purchase Order
@@ -142,3 +140,33 @@ def delete_purchase_order(
         "success": True,
         "message": "Purchase Order deleted successfully."
     }
+
+# ==========================================================
+# Generate Purchase Order from Invoice
+# ==========================================================
+@router.post(
+    "/generate/{invoice_id}",
+    response_model=PurchaseOrderResponse
+)
+def generate_purchase_order(
+    invoice_id: int,
+    db: Session = Depends(get_db)
+):
+    service = PurchaseOrderService(db)
+
+    try:
+        purchase_order = service.generate_purchase_order(invoice_id)
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    if purchase_order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found."
+        )
+
+    return purchase_order

@@ -89,6 +89,7 @@ class MatchingService:
         if invoice_currency != po_currency:
             mismatches.append("Currency")
 
+
         if round(invoice.subtotal, 2) != round(purchase_order.subtotal, 2):
             mismatches.append("Subtotal")
 
@@ -146,5 +147,10 @@ class MatchingService:
             "is_match": is_match,
             "match_score": score,
             "mismatches": mismatches,
-            "status": invoice.processing_status
+            "status": invoice.processing_status,
+            "message": (
+                "Invoice successfully matched with Purchase Order."
+                if is_match
+                else "Invoice matched with mismatches."
+            )
         }

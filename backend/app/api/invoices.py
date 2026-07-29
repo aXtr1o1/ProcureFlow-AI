@@ -161,15 +161,36 @@ async def analyze_invoice(
     db: Session = Depends(get_db)
 ):
     try:
+        # Generate one document ID
+        document_id = str(uuid.uuid4())
+
+        # Upload invoice to Blob Storage
+        upload_result = await blob_service.upload_invoice(
+            document_id=document_id,
+            file=file
+        )
+
+        # Reset file pointer because upload_invoice() has already read the file
+        await file.seek(0)
+
+        # Read file again for Document Intelligence
         file_bytes = await file.read()
 
         # Analyze the invoice
         result = document_service.analyze_invoice(file_bytes)
+        print(type(result))
+        print(result)
+
+        # Store extracted fields in OCR Text folder
+        ocr_blob = blob_service.upload_ocr_data(
+            document_id=document_id,
+            extracted_fields=result
+        )
 
         validation_service = ValidationService()
 
         # Check whether the uploaded PDF is actually an invoice
-        if not validation_service.is_invoice_document(result[0]):
+        if not validation_service.is_invoice_document(result):
             raise HTTPException(
                 status_code=422,
                 detail="The uploaded PDF is not a valid invoice."
@@ -177,7 +198,7 @@ async def analyze_invoice(
 
         # Validate the extracted invoice data
         validation_result = validation_service.validate_invoice(
-            result[0]
+            result
         )
 
         if not validation_result["is_valid"]:
@@ -190,26 +211,27 @@ async def analyze_invoice(
         invoice_service = InvoiceService(db)
 
         existing_invoice = invoice_service.get_invoice_by_number(
-            result[0]["invoice_number"]
+            result["invoice_number"]
         )
 
         if existing_invoice:
             return {
                 "success": False,
                 "message": "Invoice already exists.",
-                "invoice_number": result[0]["invoice_number"]
+                "invoice_number": result["invoice_number"]
             }
 
 
         invoice = invoice_service.save_invoice(
-            invoice_data=result[0],
-            blob_name=None,
-            blob_url=None
+            invoice_data=result,
+            blob_name=upload_result["blob_name"],
+            blob_url=upload_result["blob_url"],
+            ocr_blob=ocr_blob
         )
 
         invoice_service.save_line_items(
             invoice=invoice,
-            line_items=result[0]["line_items"]
+            line_items=result["line_items"]
         )
 
         invoice_service.save_status_log(
@@ -218,9 +240,13 @@ async def analyze_invoice(
             remarks="Invoice uploaded successfully."
         )
 
+        # Add Blob Storage details to the response
+        result["blob_name"] = upload_result["blob_name"]
+        result["blob_url"] = upload_result["blob_url"]
+
         return {
             "success": True,
-            "invoice": result[0]
+            "invoice": result
         }
 
     except HTTPException:
