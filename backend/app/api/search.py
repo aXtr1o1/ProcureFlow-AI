@@ -104,4 +104,3 @@ def search_vendor(
         total_results=len(results),
         results=results
     )
-)

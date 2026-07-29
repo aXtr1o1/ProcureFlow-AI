@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database.database import get_db
 from app.schemas.summary_schema import SummaryResponse
-from app.services.summary_service import SummaryService
+from app.services.summary_services import SummaryService
 
 router = APIRouter(
     prefix="/summary",
