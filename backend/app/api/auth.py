@@ -12,6 +12,8 @@ from app.schemas.auth_schema import (
     LoginResponse,
     UserResponse
 )
+import inspect
+print(inspect.signature(AuthService.login))
 
 router = APIRouter(
     prefix="/auth",
@@ -50,7 +52,7 @@ def login(
 
         token = AuthService.login(
             db=db,
-            username=request.username,
+            username_or_email=request.username,
             password=request.password
         )
 
@@ -62,6 +64,7 @@ def login(
         }
 
     except Exception as e:
+        print("LOGIN ERROR:", repr(e))
 
         raise HTTPException(
             status_code=401,

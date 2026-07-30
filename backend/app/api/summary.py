@@ -34,6 +34,12 @@ def generate_summary(
             detail=str(e)
         )
 
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate invoice summary."
+        )
+
     if summary is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

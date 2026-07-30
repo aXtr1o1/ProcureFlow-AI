@@ -32,7 +32,9 @@ class AzureSearchService:
     ) -> List[dict]:
 
         results = self.client.search(
-            search_text=query
+            search_text=query,
+            top=10,
+            include_total_count=True
         )
 
         return [
@@ -50,7 +52,8 @@ class AzureSearchService:
 
         results = self.client.search(
             search_text=invoice_number,
-            filter=f"invoice_number eq '{invoice_number}'"
+            filter=f"invoiceNumber eq '{invoice_number}'",
+            top=5
         )
 
         return [
@@ -68,7 +71,7 @@ class AzureSearchService:
 
         results = self.client.search(
             search_text=vendor_name,
-            filter=f"vendor_name eq '{vendor_name}'"
+            filter=f"vendorName eq '{vendor_name}'"
         )
 
         return [

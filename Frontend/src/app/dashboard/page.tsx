@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  createInvoiceFromFile,
-  fmtDate,
-  listInvoices,
-  type Invoice,
+    analyzeInvoice,
+    getInvoices,
+} from "@/services/api";
+
+import {
+    fmtDate,
+    type Invoice,
 } from "@/lib/invoices";
 
 type StepState = "pending" | "active" | "done";
@@ -40,20 +43,24 @@ const STEPS: Step[] = [
   },
 ];
 
-const STATUS_LABEL: Record<Invoice["status"], string> = {
-  processing: "Processing",
-  pending_validation: "Pending Validation",
-  pending_approval: "Pending Approval",
-  approved: "Approved",
-  rejected: "Rejected",
+const STATUS_LABEL: Record<string, string> = {
+  Uploaded: "Uploaded",
+  Matched: "Matched",
+  "Review Required": "Review Required",
+  "Approval Pending": "Approval Pending",
+  Approved: "Approved",
+  Rejected: "Rejected",
+  "PO Generated": "PO Generated",
 };
 
-const STATUS_COLOR: Record<Invoice["status"], string> = {
-  processing: "text-on-surface-variant",
-  pending_validation: "text-primary",
-  pending_approval: "text-secondary",
-  approved: "text-success",
-  rejected: "text-error",
+const STATUS_COLOR: Record<string, string> = {
+  Uploaded: "text-primary",
+  Matched: "text-green-700",
+  "Review Required": "text-yellow-700",
+  "Approval Pending": "text-secondary",
+  Approved: "text-green-700",
+  Rejected: "text-error",
+  "PO Generated": "text-blue-700",
 };
 
 export default function DashboardPage() {
@@ -74,16 +81,23 @@ export default function DashboardPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const refreshRecent = useCallback(() => {
-    setRecent(listInvoices().slice(0, 6));
+  const refreshRecent = useCallback(async () => {
+      try {
+          const response = await getInvoices();
+
+          setRecent(response.data.slice(0, 6));
+
+      } catch (error) {
+          console.error(error);
+      }
   }, []);
 
   useEffect(() => {
-    refreshRecent();
+    void refreshRecent();
 
     const onUpdate = () => {
-      refreshRecent();
-    };
+      void refreshRecent();
+  };
 
     window.addEventListener("invoices:updated", onUpdate);
 
@@ -110,7 +124,7 @@ export default function DashboardPage() {
   };
 
   const runProcessing = useCallback(
-    (file: File) => {
+    async (file: File) => {
       return new Promise<void>((resolve) => {
         setFileName(file.name);
         setCompleted(false);
@@ -124,7 +138,7 @@ export default function DashboardPage() {
 
         let stepIndex = 0;
 
-        timerRef.current = setInterval(() => {
+        timerRef.current = setInterval(async () => {
           setStepStates((previousStates) => {
             const nextStates = [...previousStates];
 
@@ -151,12 +165,43 @@ export default function DashboardPage() {
             setRunning(false);
             setCompleted(true);
 
-            const invoice = createInvoiceFromFile(file.name);
+            try {
 
-            setNewInvoiceId(invoice.id);
-            refreshRecent();
+                const result = await analyzeInvoice(file);
 
-            resolve();
+                console.log(result);
+
+                if (result.success) {
+
+                  if (result.invoice?.id) {
+                      setNewInvoiceId(result.invoice.id);
+                  }
+
+                  await refreshRecent();
+
+                  window.dispatchEvent(new Event("invoices:updated"));
+
+              } else {
+
+                  alert(result.message);
+
+                  await refreshRecent();
+
+                  router.push("/dashboard/invoices");
+
+              }
+
+              resolve();
+
+            } catch (error) {
+
+                console.error(error);
+
+                alert("Invoice upload failed.");
+
+                setRunning(false);
+
+            }
           }
         }, 900);
       });
@@ -517,7 +562,9 @@ export default function DashboardPage() {
                     type="button"
                     onClick={() => {
                       const destination =
-                        invoice.status === "pending_approval"
+                        invoice.processing_status === "Approval Pending" ||
+                        invoice.processing_status === "Approved" ||
+                        invoice.processing_status === "Rejected"
                           ? `/dashboard/invoices/${invoice.id}/approval`
                           : `/dashboard/invoices/${invoice.id}/validation`;
 
@@ -527,25 +574,25 @@ export default function DashboardPage() {
                   >
                     <div className="flex min-w-0 flex-col">
                       <span className="truncate font-body-md text-body-md font-semibold text-on-surface">
-                        {invoice.vendor}
+                        {invoice.vendor_name}
                       </span>
 
                       <span className="font-label-md text-label-md text-on-surface-variant">
-                        {invoice.invoiceNumber} · {fmtDate(invoice.date)}
+                        {invoice.invoice_number} · {fmtDate(invoice.invoice_date)}
                       </span>
                     </div>
 
                     <div className="ml-4 flex shrink-0 items-center gap-4">
                       <span className="font-body-md text-body-md text-on-surface">
-                        ${invoice.amount.toFixed(2)}
+                        ${invoice.total_amount.toFixed(2)}
                       </span>
 
                       <span
                         className={`font-label-md text-label-md ${
-                          STATUS_COLOR[invoice.status]
+                          STATUS_LABEL[invoice.processing_status]
                         }`}
                       >
-                        {STATUS_LABEL[invoice.status]}
+                        {STATUS_LABEL[invoice.processing_status]}
                       </span>
                     </div>
                   </button>

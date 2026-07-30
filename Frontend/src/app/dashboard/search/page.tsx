@@ -2,22 +2,37 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fmtDate, listInvoices, type Invoice } from "@/lib/invoices";
+import { fmtDate } from "@/lib/invoices";
+import { getInvoices } from "@/services/api";
 
-const STATUS_LABEL: Record<Invoice["status"], string> = {
-  processing: "Processing",
-  pending_validation: "Pending Validation",
-  pending_approval: "Pending Approval",
-  approved: "Approved",
-  rejected: "Rejected",
+interface Invoice {
+  id: number;
+  invoice_number: string;
+  vendor_name: string;
+  invoice_date: string;
+  total_amount: number;
+  processing_status: string;
+  blob_name: string;
+  blob_url: string;
+  created_at: string;
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  Uploaded: "Uploaded",
+  "Pending Validation": "Pending Validation",
+  "Approval Pending": "Pending Approval",
+  Approved: "Approved",
+  Rejected: "Rejected",
+  "PO Generated": "PO Generated",
 };
 
-const STATUS_STYLE: Record<Invoice["status"], string> = {
-  processing: "bg-surface-container-highest text-on-surface-variant",
-  pending_validation: "bg-primary/10 text-primary",
-  pending_approval: "bg-secondary-container text-on-secondary-container",
-  approved: "bg-green-50 text-green-700",
-  rejected: "bg-error-container text-on-error-container",
+const STATUS_STYLE: Record<string, string> = {
+  Uploaded: "bg-surface-container-highest text-on-surface-variant",
+  "Pending Validation": "bg-primary/10 text-primary",
+  "Approval Pending": "bg-secondary-container text-on-secondary-container",
+  Approved: "bg-green-50 text-green-700",
+  Rejected: "bg-error-container text-on-error-container",
+  "PO Generated": "bg-blue-50 text-blue-700",
 };
 
 type ChipFilter = "all" | "pending_approval" | "last_30" | "high_value";
@@ -42,11 +57,17 @@ export default function InvoiceSearchPage() {
   const [recent, setRecent] = useState<string[]>(DEFAULT_RECENT);
 
   useEffect(() => {
-    const refresh = () => setInvoices(listInvoices());
-    refresh();
-    window.addEventListener("invoices:updated", refresh);
-    return () => window.removeEventListener("invoices:updated", refresh);
-  }, []);
+    const loadInvoices = async () => {
+        try {
+            const response = await getInvoices();
+            setInvoices(response.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    loadInvoices();
+}, []);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -55,19 +76,18 @@ export default function InvoiceSearchPage() {
     return invoices.filter((inv) => {
       const matchesQuery =
         !q ||
-        inv.vendor.toLowerCase().includes(q) ||
-        inv.invoiceNumber.toLowerCase().includes(q) ||
-        inv.fileName.toLowerCase().includes(q);
+        inv.vendor_name.toLowerCase().includes(q) ||
+        inv.invoice_number.toLowerCase().includes(q);
 
       if (!matchesQuery) return false;
 
       switch (activeChip) {
         case "pending_approval":
-          return inv.status === "pending_approval";
+          return inv.processing_status === "Pending Validation";
         case "last_30":
-          return new Date(inv.createdAt).getTime() >= thirtyDaysAgo;
+          return new Date(inv.created_at).getTime() >= thirtyDaysAgo;
         case "high_value":
-          return inv.amount >= 1000;
+          return inv.total_amount >= 1000;
         default:
           return true;
       }
@@ -88,7 +108,7 @@ export default function InvoiceSearchPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${inv.invoiceNumber}.json`;
+    a.download = `${inv.invoice_number}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -223,17 +243,17 @@ export default function InvoiceSearchPage() {
                       </div>
                       <div className="flex flex-col">
                         <span className="font-title-md text-title-md text-on-surface">
-                          {inv.vendor}
+                          {inv.vendor_name}
                         </span>
                         <span className="font-label-sm text-label-sm text-on-surface-variant">
-                          {inv.invoiceNumber} · {fmtDate(inv.date)}
+                          {inv.invoice_number} · {fmtDate(inv.invoice_date)}
                         </span>
                       </div>
                     </div>
                     <span
-                      className={`px-2 py-0.5 rounded font-label-sm text-label-sm uppercase tracking-wider ${STATUS_STYLE[inv.status]}`}
+                      className={`px-2 py-0.5 rounded font-label-sm text-label-sm uppercase tracking-wider ${STATUS_STYLE[inv.processing_status]}`}
                     >
-                      {STATUS_LABEL[inv.status]}
+                      {STATUS_LABEL[inv.processing_status]}
                     </span>
                   </div>
                   <div className="flex justify-between items-end">
@@ -242,7 +262,7 @@ export default function InvoiceSearchPage() {
                         Amount Due
                       </span>
                       <span className="font-headline-lg text-headline-lg text-on-surface">
-                        ${inv.amount.toFixed(2)}
+                        ${inv.total_amount.toFixed(2)}
                       </span>
                     </div>
                     <div className="flex gap-sm">

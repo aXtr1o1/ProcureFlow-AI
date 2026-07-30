@@ -66,28 +66,94 @@ async def upload_invoice(file: UploadFile = File(...)):
 # Get All Uploaded Files
 # ==========================================================
 @router.get("/")
-async def get_all_invoices():
-    """
-    List all uploaded invoice files from Azure Blob Storage.
-    """
+async def get_all_invoices(
+    db: Session = Depends(get_db)
+):
+    invoice_service = InvoiceService(db)
 
-    try:
+    invoices = invoice_service.get_all_invoices()
 
-        invoices = blob_service.list_invoices()
+    data = []
 
-        return {
-            "success": True,
-            "count": len(invoices),
-            "data": invoices
-        }
+    for invoice in invoices:
+        data.append({
+            "id": invoice.id,
+            "invoice_number": invoice.invoice_number,
+            "vendor_name": invoice.vendor_name,
+            "invoice_date": invoice.invoice_date,
+            "total_amount": invoice.total_amount,
+            "processing_status": invoice.processing_status,
+            "blob_name": invoice.blob_name,
+            "blob_url": invoice.blob_url,
+        })
 
-    except Exception as e:
+    return {
+        "success": True,
+        "count": len(data),
+        "data": data,
+    }
 
+# ==========================================================
+# Get Invoice Details
+# ==========================================================
+@router.get("/details/{invoice_id}")
+async def get_invoice_details(
+    invoice_id: int,
+    db: Session = Depends(get_db)
+):
+    invoice_service = InvoiceService(db)
+
+    invoice = invoice_service.get_invoice_by_id(invoice_id)
+
+    if not invoice:
         raise HTTPException(
-            status_code=500,
-            detail=str(e)
+            status_code=404,
+            detail="Invoice not found."
         )
 
+    line_items = invoice_service.get_invoice_line_items(invoice_id)
+    status_logs = invoice_service.get_invoice_status_logs(invoice_id)
+
+    return {
+        "success": True,
+        "data": {
+            "id": invoice.id,
+            "invoice_number": invoice.invoice_number,
+            "vendor_name": invoice.vendor_name,
+            "vendor_address": invoice.vendor_address,
+            "customer_name": invoice.customer_name,
+            "invoice_date": invoice.invoice_date,
+            "due_date": invoice.due_date,
+            "purchase_order_number": invoice.purchase_order_number,
+            "currency": invoice.currency,
+            "subtotal": invoice.subtotal,
+            "tax": invoice.tax,
+            "total_amount": invoice.total_amount,
+            "processing_status": invoice.processing_status,
+            "blob_name": invoice.blob_name,
+            "blob_url": invoice.blob_url,
+            "line_items": [
+                {
+                    "id": item.id,
+                    "description": item.description,
+                    "quantity": item.quantity,
+                    "unit_price": item.unit_price,
+                    "amount": item.amount,
+                }
+                for item in line_items
+            ],
+            "status_logs": [
+                {
+                    "id": log.id,
+                    "status": log.status,
+                    "remarks": log.remarks,
+                    "updated_by": log.updated_by,
+                    "created_at": log.created_at,
+                }
+                for log in status_logs
+            ]
+        }
+    }
 
 # ==========================================================
 # Download Invoice

@@ -3,8 +3,9 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from app.services.blob_storage_service import BlobStorageService
 from app.database.models import (
-    PORecord,
-    Invoice
+    Invoice,
+    InvoiceStatusLog,
+    PORecord
 )
 
 
@@ -42,30 +43,36 @@ class PurchaseOrderService:
 
         po_data = {
 
-            "invoice_id": invoice.id,
+        "invoice_id": invoice.id,
 
-            "po_number": po_number,
+        "invoice_number": invoice.invoice_number,
 
-            "vendor_name": invoice.vendor_name,
+        "po_number": po_number,
 
-            "customer_name": invoice.customer_name,
+        "vendor_name": invoice.vendor_name,
 
-            "currency": invoice.currency,
+        "customer_name": invoice.customer_name,
 
-            "subtotal": invoice.subtotal,
+        "currency": invoice.currency,
 
-            "tax": invoice.tax,
+        "po_date": invoice.invoice_date,
 
-            "total_amount": invoice.total_amount,
+        "subtotal": invoice.subtotal,
 
-            "status": "Generated"
+        "tax": invoice.tax,
 
-        }
+        "total_amount": invoice.total_amount,
+
+        "generated_by": "System",
+
+        "status": "Generated"
+
+    }
 
         blob_service = BlobStorageService()
 
         blob = blob_service.upload_po_record(
-            document_id=po_number,
+            document_id=str(invoice.id),
             po_record=po_data
         )
 
@@ -76,11 +83,28 @@ class PurchaseOrderService:
         purchase_order = self.create_purchase_order(
             po_data
         )
+
         invoice.processing_status = "PO Generated"
 
-        self.db.commit()
+        status_log = InvoiceStatusLog(
+            invoice_id=invoice.id,
+            status="PO Generated",
+            remarks="Purchase Order generated successfully.",
+            updated_by="System"
+        )
 
-        self.db.refresh(invoice)
+        self.db.add(status_log)
+
+        try:
+            self.db.commit()
+
+            self.db.refresh(invoice)
+
+            self.db.refresh(purchase_order)
+
+        except Exception:
+            self.db.rollback()
+            raise
 
         return purchase_order
 
@@ -180,26 +204,22 @@ class PurchaseOrderService:
 
         purchase_order = PORecord(
             invoice_id=po_data.get("invoice_id"),
+            invoice_number=po_data.get("invoice_number"),
             po_number=po_data.get("po_number"),
             vendor_name=po_data.get("vendor_name"),
             customer_name=po_data.get("customer_name"),
             currency=po_data.get("currency"),
+            po_date=po_data.get("po_date"),
             subtotal=po_data.get("subtotal"),
             tax=po_data.get("tax"),
             total_amount=po_data.get("total_amount"),
             blob_name=po_data.get("blob_name"),
             blob_url=po_data.get("blob_url"),
-            status=po_data.get("status", "Approved")
+            generated_by=po_data.get("generated_by", "System"),
+            status=po_data.get("status", "Generated")
         )
 
-        try:
-            self.db.add(purchase_order)
-            self.db.commit()
-            self.db.refresh(purchase_order)
-
-        except Exception:
-            self.db.rollback()
-            raise
+        self.db.add(purchase_order)
 
         return purchase_order
 

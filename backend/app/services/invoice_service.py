@@ -12,6 +12,17 @@ class InvoiceService:
     def __init__(self, db: Session):
         self.db = db
 
+    def get_all_invoices(self):
+        """
+        Fetch all invoices from the database.
+        """
+
+        return (
+            self.db.query(Invoice)
+            .order_by(Invoice.id.desc())
+            .all()
+        )
+
     def get_invoice_by_number(self, invoice_number: str):
         """
         Check whether an invoice already exists.
@@ -105,3 +116,27 @@ class InvoiceService:
         self.db.commit()
 
         return status_log
+
+    def get_invoice_by_id(self, invoice_id: int):
+        return (
+            self.db.query(Invoice)
+            .filter(Invoice.id == invoice_id)
+            .first()
+        )
+
+
+    def get_invoice_line_items(self, invoice_id: int):
+        return (
+            self.db.query(InvoiceLineItem)
+            .filter(InvoiceLineItem.invoice_id == invoice_id)
+            .all()
+        )
+
+
+    def get_invoice_status_logs(self, invoice_id: int):
+        return (
+            self.db.query(InvoiceStatusLog)
+            .filter(InvoiceStatusLog.invoice_id == invoice_id)
+            .order_by(InvoiceStatusLog.created_at.asc())
+            .all()
+        )

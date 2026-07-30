@@ -87,6 +87,32 @@ def get_purchase_order(
 
     return purchase_order
 
+# ==========================================================
+# Get Purchase Order by Invoice
+# ==========================================================
+@router.get(
+    "/invoice/{invoice_id}",
+    response_model=PurchaseOrderResponse
+)
+def get_purchase_order_by_invoice(
+    invoice_id: int,
+    db: Session = Depends(get_db)
+):
+
+    service = PurchaseOrderService(db)
+
+    purchase_order = service.get_purchase_order_by_invoice(
+        invoice_id
+    )
+
+    if purchase_order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Purchase Order not found."
+        )
+
+    return purchase_order
+
 
 # ==========================================================
 # Update Purchase Order Status
@@ -146,7 +172,8 @@ def delete_purchase_order(
 # ==========================================================
 @router.post(
     "/generate/{invoice_id}",
-    response_model=PurchaseOrderResponse
+    response_model=PurchaseOrderResponse,
+    status_code=status.HTTP_201_CREATED
 )
 def generate_purchase_order(
     invoice_id: int,
@@ -161,6 +188,12 @@ def generate_purchase_order(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate Purchase Order."
         )
 
     if purchase_order is None:

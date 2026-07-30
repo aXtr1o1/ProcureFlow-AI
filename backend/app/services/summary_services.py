@@ -1,6 +1,7 @@
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from app.services.azure_openai_service import AzureOpenAIService
 
 from app.database.models import Invoice
 from app.services.blob_storage_service import BlobStorageService
@@ -28,12 +29,24 @@ class SummaryService:
         if invoice is None:
             return None
 
-        summary_text = (
-            f"Invoice {invoice.invoice_number} from "
-            f"{invoice.vendor_name} for "
-            f"{invoice.total_amount} {invoice.currency} "
-            f"has been processed successfully."
-        )
+        prompt = f"""
+        Generate a professional invoice summary.
+
+        Invoice Number: {invoice.invoice_number}
+        Vendor: {invoice.vendor_name}
+        Customer: {invoice.customer_name}
+        Invoice Date: {invoice.invoice_date}
+        Currency: {invoice.currency}
+        Subtotal: {invoice.subtotal}
+        Tax: {invoice.tax}
+        Total Amount: {invoice.total_amount}
+
+        Provide a concise business summary in 3 to 5 sentences.
+        """
+
+        openai_service = AzureOpenAIService()
+
+        summary_text = openai_service.chat(prompt)
 
         summary_data = {
             "invoice_id": invoice.id,

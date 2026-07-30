@@ -1,4 +1,9 @@
 "use client";
+import {
+  login,
+  register,
+  getCurrentUser,
+} from "@/services/api";
 
 import {
   createContext,
@@ -28,38 +33,46 @@ type AuthContextType = {
 };
 
 const STORAGE_KEY = "aiInvoicePo.session";
-const USERS_KEY = "aiInvoicePo.users";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-function readUsers(): Record<string, { username: string; email: string; password: string }> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(USERS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeUsers(users: Record<string, { username: string; email: string; password: string }>) {
-  window.localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) setUser(JSON.parse(raw));
-    } catch {
-      // ignore corrupted storage
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+
+    const loadUser = async () => {
+
+        try {
+
+            const token = localStorage.getItem("access_token");
+
+            if (!token) {
+                setLoading(false);
+                return;
+            }
+
+            const user = await getCurrentUser();
+
+            setUser(user);
+
+        } catch {
+
+            localStorage.removeItem("access_token");
+            setUser(null);
+
+        } finally {
+
+            setLoading(false);
+
+        }
+
+    };
+
+    loadUser();
+
+}, []);
 
   const persist = (u: User | null) => {
     setUser(u);
@@ -70,28 +83,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signIn: AuthContextType["signIn"] = async (email, password) => {
-    await new Promise((r) => setTimeout(r, 500));
-    const users = readUsers();
-    const record = users[email.toLowerCase()];
-    if (!record || record.password !== password) {
-      return { ok: false, error: "Invalid email or password." };
+  const signIn = async (
+    username: string,
+    password: string
+  ) => {
+
+    try {
+
+      const data = await login(username, password);
+
+      localStorage.setItem(
+        "access_token",
+        data.access_token
+      );
+
+      const currentUser = await getCurrentUser();
+
+      persist(currentUser);
+
+      return {
+        ok: true,
+      };
+
+    } catch (err: any) {
+
+      return {
+        ok: false,
+        error: err.message,
+      };
+
     }
-    persist({ username: record.username, email: record.email });
-    return { ok: true };
+
   };
 
-  const signUp: AuthContextType["signUp"] = async (username, email, password) => {
-    await new Promise((r) => setTimeout(r, 500));
-    const users = readUsers();
-    const key = email.toLowerCase();
-    if (users[key]) {
-      return { ok: false, error: "An account with this email already exists." };
+  const signUp = async (
+    username: string,
+    email: string,
+    password: string
+  ) => {
+
+    try {
+
+      await register(
+        username,
+        email,
+        password
+      );
+
+      return await signIn(
+        email,
+        password
+      );
+
+    } catch (err: any) {
+
+      return {
+        ok: false,
+        error: err.message,
+      };
+
     }
-    users[key] = { username, email, password };
-    writeUsers(users);
-    persist({ username, email });
-    return { ok: true };
+
   };
 
   const signInWithGoogle: AuthContextType["signInWithGoogle"] = async () => {
@@ -100,7 +152,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   };
 
-  const signOut = () => persist(null);
+  const signOut = () => {
+
+    localStorage.removeItem("access_token");
+
+    persist(null);
+
+  };
 
   const value = useMemo(
     () => ({ user, loading, signIn, signUp, signInWithGoogle, signOut }),

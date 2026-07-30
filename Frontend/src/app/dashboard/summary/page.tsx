@@ -25,34 +25,49 @@ export default function SummaryPage() {
   const [endDate, setEndDate] = useState(today());
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
 
   useEffect(() => {
-    const all = listInvoices();
-    setInvoices(all);
-    setSelected(new Set(all.map((i) => i.id)));
+    const loadInvoices = async () => {
+      try {
+        const all = await listInvoices();
+        console.log("First Invoice:", all[0]);
+
+        console.log("Invoices:", all);
+
+        setInvoices(all);
+        setSelected(new Set(all.map((i) => i.id)));
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    loadInvoices();
   }, []);
 
   const inRange = useMemo(() => {
     const start = new Date(startDate).getTime();
     const end = new Date(endDate).getTime() + 1000 * 60 * 60 * 24 - 1;
     return invoices.filter((inv) => {
-      const t = new Date(inv.createdAt).getTime();
-      return t >= start && t <= end;
-    });
+    console.log(inv);
+
+    const t = new Date(inv.invoice_date).getTime();
+
+    return t >= start && t <= end;
+});
   }, [invoices, startDate, endDate]);
 
   const stats = useMemo(() => {
     const total = inRange.length;
-    const totalAmount = inRange.reduce((s, i) => s + i.amount, 0);
-    const approved = inRange.filter((i) => i.status === "approved").length;
+    const totalAmount = inRange.reduce((s, i) => s + i.total_amount, 0);
+    const approved = inRange.filter((i) => i.processing_status === "Approved").length;
     const pending = total - approved;
     const pctComplete = total === 0 ? 0 : Math.round((approved / total) * 100);
 
     const vendorTotals = new Map<string, number>();
     inRange.forEach((inv) => {
-      vendorTotals.set(inv.vendor, (vendorTotals.get(inv.vendor) ?? 0) + inv.amount);
+      vendorTotals.set(inv.vendor_name, (vendorTotals.get(inv.vendor_name) ?? 0) + inv.total_amount);
     });
     const topVendors = Array.from(vendorTotals.entries())
       .sort((a, b) => b[1] - a[1])
@@ -82,7 +97,7 @@ export default function SummaryPage() {
     }, 1000);
   };
 
-  const toggleSelected = (id: string) => {
+  const toggleSelected = (id: number) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -345,18 +360,18 @@ export default function SummaryPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start gap-2">
                         <p className="font-title-md text-title-md text-on-surface truncate">
-                          {inv.invoiceNumber}
+                          {inv.invoice_number}
                         </p>
                         <p className="font-title-md text-title-md text-on-surface shrink-0">
-                          ${inv.amount.toFixed(2)}
+                          ${inv.total_amount.toFixed(2)}
                         </p>
                       </div>
                       <div className="flex justify-between items-center gap-2">
                         <p className="font-body-sm text-body-sm text-on-surface-variant truncate">
-                          {inv.vendor}
+                          {inv.vendor_name}
                         </p>
                         <span className="font-label-sm text-label-sm text-on-surface-variant">
-                          {fmtDate(inv.createdAt)}
+                          {fmtDate(inv.invoice_date)}
                         </span>
                       </div>
                     </div>

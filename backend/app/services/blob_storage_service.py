@@ -96,33 +96,35 @@ class BlobStorageService:
         # Create OCR Text String
         # ---------------------------------------
 
-        ocr_text = json.dumps(
-            {
-                "invoiceNumber": extracted_fields.get("invoice_number"),
-                "vendorName": extracted_fields.get("vendor_name"),
-                "invoiceDate": extracted_fields.get("invoice_date"),
-                "currency": extracted_fields.get("currency"),
-                "amount": extracted_fields.get("total_amount"),
-                "items": [
-                    {
-                        "description": item.get("description"),
-                        "quantity": item.get("quantity"),
-                        "price": item.get("unit_price")
-                    }
-                    for item in extracted_fields.get("line_items", [])
-                ]
-            },
-            ensure_ascii=False,
-            separators=(",", ":")
-        )
+        ocr_text = "\n".join([
+            f"Invoice Number: {extracted_fields.get('invoice_number')}",
+            f"Vendor: {extracted_fields.get('vendor_name')}",
+            f"Invoice Date: {extracted_fields.get('invoice_date')}",
+            f"Currency: {extracted_fields.get('currency')}",
+            f"Amount: {extracted_fields.get('total_amount')}",
+            "",
+            "Items:",
+            *[
+                f"{item.get('description')} Qty:{item.get('quantity')} Price:{item.get('unit_price')}"
+                for item in extracted_fields.get("line_items", [])
+            ]
+        ])
 
         # ---------------------------------------
         # Create JSON document
         # ---------------------------------------
 
-        json_document = extracted_fields.copy()
-
-        json_document["ocr_text"] = ocr_text
+        json_document = {
+            "id": document_id,
+            "invoiceNumber": extracted_fields.get("invoice_number"),
+            "vendorName": extracted_fields.get("vendor_name"),
+            "invoiceDate": extracted_fields.get("invoice_date"),
+            "amount": extracted_fields.get("total_amount"),
+            "currency": extracted_fields.get("currency"),
+            "ocrText": ocr_text,
+            "blobUrl": f"{self.container_client.url}/{self._invoice_blob_name(document_id, 'pdf')}",
+            "status": extracted_fields.get("status", "Uploaded")
+        }
 
         # ---------------------------------------
         # Upload JSON
@@ -131,8 +133,7 @@ class BlobStorageService:
         json_client.upload_blob(
             json.dumps(
                 json_document,
-                ensure_ascii=False,
-                indent=4
+                ensure_ascii=False
             ),
             overwrite=True
         )
