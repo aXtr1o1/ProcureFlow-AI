@@ -12,7 +12,7 @@ import {
 import { fmtDate } from "@/lib/invoices";
 
 interface ApprovalHistory {
-    id: number;
+    invoice_id: number;
     reviewer: string;
     decision: string;
     remarks: string;
@@ -79,46 +79,53 @@ export default function InvoiceApprovalPage() {
 
   const handleDecision = async (
     decision: "approved" | "rejected"
-) => {
+  ) => {
+
+    // Prevent multiple clicks
+    if (deciding) return;
+
+    setDeciding(decision);
 
     try {
 
-        setDeciding(decision);
+      if (decision === "approved") {
 
-        if (decision === "approved") {
+        await approveInvoice(
+          invoice.id,
+          "Manager"
+        );
 
-            await approveInvoice(
-                invoice.id,
-                "Manager"
-            );
+      } else {
 
-        } else {
+        const ok = window.confirm(
+          "Are you sure you want to reject this invoice?"
+        );
 
-            const ok = window.confirm(
-                "Are you sure you want to reject this invoice?"
-            );
-
-            if (!ok) {
-                setDeciding(null);
-                return;
-            }
-
-            await rejectInvoice(
-                invoice.id,
-                "Manager",
-                "Rejected during approval."
-            );
-
+        if (!ok) {
+          return;
         }
 
-        router.push("/dashboard/invoices");
+        await rejectInvoice(
+          invoice.id,
+          "Manager",
+          "Rejected during approval."
+        );
+
+      }
+
+      // Redirect after API success
+      router.replace("/dashboard/invoices");
+
+    } catch (error) {
+
+      console.error(error);
 
     } finally {
 
-        setDeciding(null);
+      setDeciding(null);
 
     }
-};
+  };
 
 
   const isDecided = invoice.processing_status === "Approved" || invoice.processing_status === "Rejected";
@@ -225,7 +232,10 @@ export default function InvoiceApprovalPage() {
             <div className="flex flex-col gap-lg relative">
               <div className="absolute left-[11px] top-2 bottom-2 w-[2px] bg-outline-variant" />
               {history.map((item) => (
-                <div key={item.id} className="flex gap-md relative">
+                <div
+                    key={`${item.invoice_id}-${item.approved_at}`}
+                    className="flex gap-md relative"
+                >
                   <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center z-10">
                     <span className="material-symbols-outlined text-[14px] text-on-primary">
                       check
