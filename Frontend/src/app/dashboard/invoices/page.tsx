@@ -2,22 +2,38 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fmtDate, listInvoices, type Invoice } from "@/lib/invoices";
+import { fmtDate } from "@/lib/invoices";
+import { getInvoices } from "@/services/api";
 
-const STATUS_LABEL: Record<Invoice["status"], string> = {
-  processing: "Processing",
-  pending_validation: "Pending Validation",
-  pending_approval: "Pending Approval",
-  approved: "Approved",
-  rejected: "Rejected",
+interface Invoice {
+  id: number;
+  invoice_number: string;
+  vendor_name: string;
+  invoice_date: string;
+  total_amount: number;
+  processing_status: string;
+  blob_name: string;
+  blob_url: string;
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  Uploaded: "Uploaded",
+  Matched: "Matched",
+  "Review Required": "Review Required",
+  "Approval Pending": "Approval Pending",
+  Approved: "Approved",
+  Rejected: "Rejected",
+  "PO Generated": "PO Generated",
 };
 
-const STATUS_STYLE: Record<Invoice["status"], string> = {
-  processing: "bg-surface-container-highest text-on-surface-variant",
-  pending_validation: "bg-primary/10 text-primary",
-  pending_approval: "bg-secondary-container text-on-secondary-container",
-  approved: "bg-green-50 text-green-700",
-  rejected: "bg-error-container text-on-error-container",
+const STATUS_STYLE: Record<string, string> = {
+  Uploaded: "bg-primary/10 text-primary",
+  Matched: "bg-green-50 text-green-700",
+  "Review Required": "bg-yellow-50 text-yellow-700",
+  "Approval Pending": "bg-secondary-container text-on-secondary-container",
+  Approved: "bg-green-50 text-green-700",
+  Rejected: "bg-error-container text-on-error-container",
+  "PO Generated": "bg-blue-50 text-blue-700",
 };
 
 export default function InvoicesListPage() {
@@ -25,11 +41,31 @@ export default function InvoicesListPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
 
   useEffect(() => {
-    const refresh = () => setInvoices(listInvoices());
+
+    const refresh = async () => {
+
+        try {
+
+            const response = await getInvoices();
+
+            setInvoices(response.data);
+
+        } catch (error) {
+
+            console.error(error);
+
+        }
+
+    };
+
     refresh();
+
     window.addEventListener("invoices:updated", refresh);
-    return () => window.removeEventListener("invoices:updated", refresh);
-  }, []);
+
+    return () =>
+        window.removeEventListener("invoices:updated", refresh);
+
+}, []);
 
   return (
     <div className="max-w-container-max mx-auto px-margin-desktop w-full py-12">
@@ -81,21 +117,24 @@ export default function InvoicesListPage() {
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="font-title-lg text-title-lg text-on-surface truncate">
-                    {inv.vendor}
+                    {inv.vendor_name}
                   </span>
                   <span className="font-label-md text-label-md text-on-surface-variant truncate">
-                    {inv.invoiceNumber} · {fmtDate(inv.date)} · {inv.fileName}
+                    {inv.invoice_number} · {fmtDate(inv.invoice_date)}
                   </span>
                 </div>
               </button>
               <div className="flex items-center gap-4 shrink-0">
                 <span className="font-title-lg text-title-lg text-on-surface">
-                  ${inv.amount.toFixed(2)}
+                  ${inv.total_amount.toFixed(2)}
                 </span>
                 <span
-                  className={`font-label-md text-label-md px-3 py-1.5 rounded-full ${STATUS_STYLE[inv.status]}`}
+                  className={`font-label-md text-label-md px-3 py-1.5 rounded-full ${
+                    STATUS_STYLE[inv.processing_status] ??
+                    "bg-surface-container-highest text-on-surface-variant"
+                  }`}
                 >
-                  {STATUS_LABEL[inv.status]}
+                  {STATUS_LABEL[inv.processing_status] ?? inv.processing_status}
                 </span>
                 <button
                   type="button"
@@ -110,17 +149,17 @@ export default function InvoicesListPage() {
                 <button
                   type="button"
                   title={
-                    inv.status === "pending_approval" ||
-                    inv.status === "approved" ||
-                    inv.status === "rejected"
+                    inv.processing_status === "Approval Pending" ||
+                    inv.processing_status === "Approved" ||
+                    inv.processing_status === "Rejected"
                       ? "Go to approval"
                       : "Go to validation"
                   }
                   onClick={() =>
                     router.push(
-                      inv.status === "pending_approval" ||
-                        inv.status === "approved" ||
-                        inv.status === "rejected"
+                      inv.processing_status === "Approval Pending" ||
+                        inv.processing_status === "Approved" ||
+                        inv.processing_status === "Rejected"
                         ? `/dashboard/invoices/${inv.id}/approval`
                         : `/dashboard/invoices/${inv.id}/validation`
                     )
@@ -132,7 +171,7 @@ export default function InvoicesListPage() {
                   </span>
                 </button>
               </div>
-            </div>
+            </div>  
           ))}
         </div>
       )}

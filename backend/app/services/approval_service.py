@@ -81,23 +81,9 @@ class ApprovalService:
             invoice.id
         ):
 
-            self.purchase_order_service.create_purchase_order(
-                {
-                    "invoice_id": invoice.id,
-                    "po_number": f"PO-{invoice.invoice_number}",
-                    "vendor_name": invoice.vendor_name,
-                    "customer_name": invoice.customer_name,
-                    "currency": invoice.currency,
-                    "subtotal": invoice.subtotal,
-                    "tax": invoice.tax,
-                    "total_amount": invoice.total_amount,
-                    "blob_name": None,
-                    "blob_url": None,
-                    "status": "Approved"
-                }
+            self.purchase_order_service.generate_purchase_order(
+                invoice.id
             )
-
-        invoice.processing_status = "PO Generated"
 
         status_log = InvoiceStatusLog(
             invoice_id=invoice.id,
@@ -182,12 +168,12 @@ class ApprovalService:
     ):
 
         return (
-            self.db.query(InvoiceStatusLog)
+            self.db.query(ApprovalHistory)
             .filter(
-                InvoiceStatusLog.invoice_id == invoice_id
+                ApprovalHistory.invoice_id == invoice_id
             )
             .order_by(
-                InvoiceStatusLog.created_at.desc()
+                ApprovalHistory.approved_at.desc()
             )
             .all()
         )

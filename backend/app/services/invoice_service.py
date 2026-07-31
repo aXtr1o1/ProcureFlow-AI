@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-
+from fastapi import HTTPException
 from app.database.models import (
     Invoice,
     InvoiceLineItem,
@@ -11,6 +11,17 @@ class InvoiceService:
 
     def __init__(self, db: Session):
         self.db = db
+
+    def get_all_invoices(self):
+        """
+        Fetch all invoices from the database.
+        """
+
+        return (
+            self.db.query(Invoice)
+            .order_by(Invoice.id.desc())
+            .all()
+        )
 
     def get_invoice_by_number(self, invoice_number: str):
         """
@@ -26,35 +37,45 @@ class InvoiceService:
         self,
         invoice_data: dict,
         blob_name: str,
-        blob_url: str
+        blob_url: str,
+        ocr_blob: dict
     ):
-        print("===== save_invoice() called =====")
-        print(invoice_data)
+        
 
-        invoice = Invoice(
-            invoice_number=invoice_data.get("invoice_number"),
-            vendor_name=invoice_data.get("vendor_name"),
-            vendor_address=invoice_data.get("vendor_address"),
-            customer_name=invoice_data.get("customer_name"),
-            invoice_date=invoice_data.get("invoice_date"),
-            due_date=invoice_data.get("due_date"),
-            purchase_order_number=invoice_data.get("purchase_order_number"),
-            currency=invoice_data.get("currency"),
-            subtotal=invoice_data.get("subtotal"),
-            tax=invoice_data.get("tax"),
-            total_amount=invoice_data.get("total_amount"),
-            blob_name=blob_name,
-            blob_url=blob_url,
-            processing_status="Uploaded"
-        )
+        try:
 
-        self.db.add(invoice)
-        self.db.commit()
-        self.db.refresh(invoice)
+            invoice = Invoice(
+                invoice_number=invoice_data.get("invoice_number"),
+                vendor_name=invoice_data.get("vendor_name"),
+                vendor_address=invoice_data.get("vendor_address"),
+                customer_name=invoice_data.get("customer_name"),
+                invoice_date=invoice_data.get("invoice_date"),
+                due_date=invoice_data.get("due_date"),
+                purchase_order_number=invoice_data.get("purchase_order_number"),
+                currency=invoice_data.get("currency"),
+                subtotal=invoice_data.get("subtotal"),
+                tax=invoice_data.get("tax"),
+                total_amount=invoice_data.get("total_amount"),
+                blob_name=blob_name,
+                blob_url=blob_url,
+                ocr_json_blob_name=ocr_blob.get("json_blob_name"),
+                ocr_json_blob_url=ocr_blob.get("json_blob_url"),
+                processing_status="Uploaded"
+            )
 
-        print(f"Invoice saved with ID: {invoice.id}")
+            self.db.add(invoice)
 
-        return invoice
+            self.db.commit()
+
+            self.db.refresh(invoice)
+
+            return invoice
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=str(e)
+            )
 
     def save_line_items(
         self,
@@ -95,3 +116,27 @@ class InvoiceService:
         self.db.commit()
 
         return status_log
+
+    def get_invoice_by_id(self, invoice_id: int):
+        return (
+            self.db.query(Invoice)
+            .filter(Invoice.id == invoice_id)
+            .first()
+        )
+
+
+    def get_invoice_line_items(self, invoice_id: int):
+        return (
+            self.db.query(InvoiceLineItem)
+            .filter(InvoiceLineItem.invoice_id == invoice_id)
+            .all()
+        )
+
+
+    def get_invoice_status_logs(self, invoice_id: int):
+        return (
+            self.db.query(InvoiceStatusLog)
+            .filter(InvoiceStatusLog.invoice_id == invoice_id)
+            .order_by(InvoiceStatusLog.created_at.asc())
+            .all()
+        )

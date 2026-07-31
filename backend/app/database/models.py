@@ -85,6 +85,10 @@ class Invoice(Base):
     blob_name = Column(String(255))
     blob_url = Column(String(1000))
 
+    # Invoice OCR JSON
+    ocr_json_blob_name = Column(String(255), nullable=True)
+    ocr_json_blob_url = Column(String(1000), nullable=True)
+
     processing_status = Column(String(100), default="Uploaded")
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -216,11 +220,15 @@ class PORecord(Base):
 
     po_number = Column(String(100), unique=True, nullable=False)
 
+    invoice_number = Column(String(100))
+
     vendor_name = Column(String(255))
 
     customer_name = Column(String(255))
 
     currency = Column(String(20))
+
+    po_date = Column(String(100))
 
     subtotal = Column(Float, default=0)
 
@@ -233,6 +241,8 @@ class PORecord(Base):
     blob_url = Column(String(1000))
 
     status = Column(String(100), default="Generated")
+
+    generated_by = Column(String(100), default="System")
 
     generated_at = Column(DateTime, default=datetime.utcnow)
 

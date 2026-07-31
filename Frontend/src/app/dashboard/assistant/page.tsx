@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { listInvoices, type Invoice } from "@/lib/invoices";
+import { getInvoices } from "@/services/api";
+import type { Invoice } from "@/lib/invoices";
 
 type ChatMessage = {
   id: string;
@@ -27,7 +28,7 @@ function timeNow() {
 
 function buildGreeting(invoices: Invoice[]): string {
   const pending = invoices.filter(
-    (i) => i.status === "pending_validation" || i.status === "pending_approval"
+    (i) => i.processing_status === "Pending Validation" || i.processing_status === "Pending Approval"
   ).length;
   if (pending === 0) {
     return "Good morning! Your invoice queue is clear right now — nothing needs your attention. How can I help?";
@@ -45,17 +46,17 @@ function answerQuestion(
 
   // Try to match a vendor name mentioned in the question.
   const vendorMatch = invoices.find((inv) =>
-    q.includes(inv.vendor.toLowerCase().split(" ")[0].toLowerCase())
+    q.includes(inv.vendor_name.toLowerCase().split(" ")[0].toLowerCase())
   );
 
   if (q.includes("summar")) {
-    const total = invoices.reduce((s, i) => s + i.amount, 0);
+    const total = invoices.reduce((s, i) => s + i.total_amount, 0);
     return {
       text: `This month I found ${invoices.length} invoices totaling $${total.toFixed(
         2
-      )}. ${invoices.filter((i) => i.status === "approved").length} are approved, ${
+      )}. ${invoices.filter((i) => i.processing_status === "Approved").length} are approved, ${
         invoices.filter(
-          (i) => i.status === "pending_approval" || i.status === "pending_validation"
+          (i) => i.processing_status === "Pending Validation" || i.processing_status === "Pending Approval"
         ).length
       } are still in review.`,
     };
@@ -69,9 +70,9 @@ function answerQuestion(
 
   if (q.includes("deadline") || q.includes("due")) {
     const upcoming = [...invoices]
-      .filter((i) => i.status !== "approved" && i.status !== "rejected")
+      .filter((i) => i.processing_status !== "Approved" && i.processing_status !== "Rejected")
       .sort(
-        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+        (a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
       )
       .slice(0, 3);
     if (upcoming.length === 0) {
@@ -85,7 +86,7 @@ function answerQuestion(
 
   if (q.includes("pending") || q.includes("review") || q.includes("flag")) {
     const pending = invoices.filter(
-      (i) => i.status === "pending_validation" || i.status === "pending_approval"
+      (i) => i.processing_status === "Pending Validation" || i.processing_status === "Pending Approval"
     );
     if (pending.length === 0) {
       return { text: "Nothing is currently pending review — you're all caught up." };
@@ -100,12 +101,12 @@ function answerQuestion(
 
   if (vendorMatch) {
     const vendorInvoices = invoices.filter(
-      (i) => i.vendor === vendorMatch.vendor
+      (i) => i.vendor_name === vendorMatch.vendor_name
     );
     return {
       text: `I found ${vendorInvoices.length} invoice${
         vendorInvoices.length === 1 ? "" : "s"
-      } from ${vendorMatch.vendor}:`,
+      } from ${vendorMatch.vendor_name}:`,
       cards: vendorInvoices.slice(0, 4),
     };
   }
@@ -130,16 +131,28 @@ export default function AssistantPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const invs = listInvoices();
-    setInvoices(invs);
-    setMessages([
-      {
-        id: crypto.randomUUID(),
-        role: "bot",
-        text: buildGreeting(invs),
-        time: timeNow(),
-      },
-    ]);
+    const loadInvoices = async () => {
+      try {
+        const response = await getInvoices();
+
+        const invs = response.data;
+
+        setInvoices(invs);
+
+        setMessages([
+          {
+            id: crypto.randomUUID(),
+            role: "bot",
+            text: buildGreeting(invs),
+            time: timeNow(),
+          },
+        ]);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    loadInvoices();
   }, []);
 
   useEffect(() => {
@@ -228,10 +241,10 @@ export default function AssistantPage() {
                             </div>
                             <div className="min-w-0">
                               <p className="font-title-md text-body-md truncate">
-                                {inv.invoiceNumber}
+                                {inv.invoice_number}
                               </p>
                               <p className="font-label-sm text-label-sm text-outline">
-                                ${inv.amount.toFixed(2)}
+                                ${inv.total_amount.toFixed(2)}
                               </p>
                             </div>
                           </div>

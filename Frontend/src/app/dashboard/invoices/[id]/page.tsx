@@ -2,14 +2,53 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { fmtDate, getInvoice, type Invoice } from "@/lib/invoices";
+import { fmtDate } from "@/lib/invoices";
+import { getInvoice } from "@/services/api";
 
-const STATUS_LABEL: Record<Invoice["status"], string> = {
-  processing: "Processing",
-  pending_validation: "Pending Validation",
-  pending_approval: "Pending Approval",
-  approved: "Approved",
-  rejected: "Rejected",
+
+interface LineItem {
+  id: number;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  amount: number;
+}
+
+interface StatusLog {
+  id: number;
+  status: string;
+  remarks: string;
+  created_at: string;
+}
+
+interface Invoice {
+  id: number;
+  invoice_number: string;
+  vendor_name: string;
+  vendor_address: string;
+  customer_name: string;
+  invoice_date: string;
+  due_date: string;
+  purchase_order_number: string | null;
+  currency: string;
+  subtotal: number;
+  tax: number;
+  total_amount: number;
+  processing_status: string;
+  blob_name: string;
+  blob_url: string;
+  line_items: LineItem[];
+  status_logs: StatusLog[];
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  Uploaded: "Uploaded",
+  Matched: "Matched",
+  "Review Required": "Review Required",
+  "Approval Pending": "Approval Pending",
+  Approved: "Approved",
+  Rejected: "Rejected",
+  "PO Generated": "PO Generated",
 };
 
 export default function InvoiceDetailsPage() {
@@ -21,16 +60,35 @@ export default function InvoiceDetailsPage() {
   );
 
   useEffect(() => {
-    setInvoice(getInvoice(params.id) ?? null);
-  }, [params.id]);
 
-  const subtotal = useMemo(
-    () =>
-      invoice
-        ? invoice.lineItems.reduce((sum, i) => sum + i.amount * i.qty, 0)
-        : 0,
-    [invoice]
+    const loadInvoice = async () => {
+
+        try {
+
+            const response = await getInvoice(params.id);
+
+            setInvoice(response.data);
+
+        } catch {
+
+            setInvoice(null);
+
+        }
+
+    };
+
+    loadInvoice();
+
+}, [params.id]);
+
+  const subtotal = useMemo(() => {
+  if (!invoice) return 0;
+
+  return invoice.line_items.reduce(
+    (sum, item) => sum + item.amount,
+    0
   );
+}, [invoice]);
 
   if (invoice === undefined) {
     return (
@@ -56,10 +114,9 @@ export default function InvoiceDetailsPage() {
     );
   }
 
-  const isOverdue = new Date(invoice.dueDate).getTime() < Date.now();
-  const poMatch = invoice.ocrConfidence >= 97 ? "Full" : "Partial";
-  const ocrFlag = invoice.ocrConfidence >= 98 ? "Clear" : "Check Tax";
-  const taxId = `TX-${invoice.vendorId.replace("V-", "")}`;
+  const isOverdue =
+    invoice.due_date &&
+    new Date(invoice.due_date).getTime() < Date.now();
 
   const handleExportJson = () => {
     setExportState("working");
@@ -69,7 +126,7 @@ export default function InvoiceDetailsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${invoice.invoiceNumber}.json`;
+    a.download = `${invoice.invoice_number}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -101,24 +158,24 @@ export default function InvoiceDetailsPage() {
             Invoice Details
           </span>
           <h1 className="font-display-lg text-display-lg text-on-surface">
-            {invoice.invoiceNumber}
+            {invoice.invoice_number}
           </h1>
           <div className="flex items-center gap-xs mt-1">
             <span className="material-symbols-outlined text-primary text-[18px]">
               verified
             </span>
             <span className="font-title-lg text-title-lg text-on-surface">
-              {invoice.vendor}
+              {invoice.vendor_name}
             </span>
           </div>
         </div>
         <div className="flex flex-col items-end gap-sm">
           <span className="inline-flex items-center px-3 py-1 rounded-full bg-primary-container text-on-primary-container font-label-md text-label-md shadow-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-on-primary-container mr-2 animate-pulse" />
-            {STATUS_LABEL[invoice.status].toUpperCase()}
+            {(STATUS_LABEL[invoice.processing_status] ?? invoice.processing_status).toUpperCase()}
           </span>
           <span className="font-label-sm text-label-sm text-on-surface-variant">
-            Created {fmtDate(invoice.createdAt)}
+            Status: {invoice.processing_status}
           </span>
         </div>
       </div>
@@ -156,71 +213,6 @@ export default function InvoiceDetailsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 flex flex-col gap-6">
-          {/* Validation summary */}
-          <div className="bg-surface-container-lowest rounded-xl shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-title-lg text-title-lg text-on-surface">
-                Validation Summary
-              </h3>
-              <span className="font-label-md text-label-md text-primary font-bold">
-                {invoice.ocrConfidence}% Confidence
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-sm">
-              <div className="flex flex-col items-center p-sm rounded-lg bg-surface text-center">
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mb-1">
-                  <span className="material-symbols-outlined text-primary text-[18px]">
-                    check_circle
-                  </span>
-                </div>
-                <span className="font-label-sm text-label-sm text-on-surface-variant">
-                  Vendor
-                </span>
-                <span className="font-label-md text-label-md text-on-surface">
-                  Verified
-                </span>
-              </div>
-              <div className="flex flex-col items-center p-sm rounded-lg bg-surface text-center">
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mb-1">
-                  <span className="material-symbols-outlined text-primary text-[18px]">
-                    link
-                  </span>
-                </div>
-                <span className="font-label-sm text-label-sm text-on-surface-variant">
-                  PO Match
-                </span>
-                <span className="font-label-md text-label-md text-on-surface">
-                  {poMatch}
-                </span>
-              </div>
-              <div className="flex flex-col items-center p-sm rounded-lg bg-surface text-center">
-                <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${
-                    ocrFlag === "Clear" ? "bg-primary/10" : "bg-error-container/40"
-                  }`}
-                >
-                  <span
-                    className={`material-symbols-outlined text-[18px] ${
-                      ocrFlag === "Clear" ? "text-primary" : "text-error"
-                    }`}
-                  >
-                    {ocrFlag === "Clear" ? "check_circle" : "warning"}
-                  </span>
-                </div>
-                <span className="font-label-sm text-label-sm text-on-surface-variant">
-                  OCR Flag
-                </span>
-                <span
-                  className={`font-label-md text-label-md ${
-                    ocrFlag === "Clear" ? "text-on-surface" : "text-error"
-                  }`}
-                >
-                  {ocrFlag}
-                </span>
-              </div>
-            </div>
-          </div>
-
           {/* Metadata + line items */}
           <div className="bg-surface-container-lowest rounded-xl shadow-sm p-6">
             <div className="flex items-center gap-sm mb-6">
@@ -234,7 +226,7 @@ export default function InvoiceDetailsPage() {
                   Total Amount
                 </p>
                 <p className="font-headline-lg text-headline-lg text-on-surface">
-                  ${invoice.amount.toFixed(2)}
+                  ${invoice.total_amount.toFixed(2)}
                 </p>
               </div>
             </div>
@@ -244,7 +236,7 @@ export default function InvoiceDetailsPage() {
                   Invoice Date
                 </p>
                 <p className="font-body-md text-body-md text-on-surface font-semibold">
-                  {fmtDate(invoice.date)}
+                  {fmtDate(invoice.invoice_date)}
                 </p>
               </div>
               <div>
@@ -256,7 +248,7 @@ export default function InvoiceDetailsPage() {
                     isOverdue ? "text-error" : "text-on-surface"
                   }`}
                 >
-                  {fmtDate(invoice.dueDate)}
+                  {fmtDate(invoice.due_date)}
                 </p>
               </div>
               <div>
@@ -264,7 +256,7 @@ export default function InvoiceDetailsPage() {
                   Terms
                 </p>
                 <p className="font-body-md text-body-md text-on-surface font-semibold">
-                  {invoice.terms}
+                  {invoice.currency}
                 </p>
               </div>
               <div>
@@ -272,7 +264,7 @@ export default function InvoiceDetailsPage() {
                   Tax ID
                 </p>
                 <p className="font-body-md text-body-md text-on-surface font-semibold">
-                  {taxId}
+                  {invoice.purchase_order_number ?? "N/A"}
                 </p>
               </div>
             </div>
@@ -292,21 +284,20 @@ export default function InvoiceDetailsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-variant">
-                  {invoice.lineItems.map((item) => (
+                  {invoice.line_items.map((item) => (
                     <tr key={item.id}>
                       <td className="px-4 py-3">
                         <p className="font-body-md text-body-md text-on-surface font-medium">
-                          {item.name}
+                          {item.description}
                         </p>
                         <p className="font-label-sm text-label-sm text-on-surface-variant">
-                          SKU: {item.sku}
                         </p>
                       </td>
                       <td className="px-4 py-3 text-right font-body-md text-body-md">
-                        {item.qty}
+                        {item.quantity}
                       </td>
                       <td className="px-4 py-3 text-right font-body-md text-body-md text-on-surface font-semibold">
-                        ${(item.amount * item.qty).toFixed(2)}
+                        ${(item.amount).toFixed(2)}
                       </td>
                     </tr>
                   ))}
@@ -333,7 +324,7 @@ export default function InvoiceDetailsPage() {
             Approval History
           </h3>
           <div className="relative space-y-6 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-surface-variant">
-            {invoice.auditTrail.map((event) => (
+            {invoice.status_logs.map((event) => (
               <div key={event.id} className="relative pl-9">
                 <div className="absolute left-0 top-0.5 w-6 h-6 rounded-full bg-primary flex items-center justify-center z-10">
                   <span className="material-symbols-outlined text-on-primary text-[14px]">
@@ -341,17 +332,17 @@ export default function InvoiceDetailsPage() {
                   </span>
                 </div>
                 <p className="font-body-md text-body-md text-on-surface font-semibold">
-                  {event.label}
+                  {event.status}
                 </p>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
-                  {event.detail}
+                  {event.remarks}
                 </p>
                 <p className="font-label-sm text-label-sm text-on-surface-variant mt-1">
-                  {fmtDate(event.at)}
+                  {fmtDate(event.created_at)}
                 </p>
               </div>
             ))}
-            {invoice.status !== "approved" && invoice.status !== "rejected" && (
+            {invoice.processing_status !== "approved" && invoice.processing_status !== "rejected" && (
               <div className="relative pl-9">
                 <div className="absolute left-0 top-0.5 w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center z-10">
                   <div className="w-2 h-2 rounded-full bg-primary" />
@@ -360,7 +351,7 @@ export default function InvoiceDetailsPage() {
                   Awaiting Next Step
                 </p>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
-                  {invoice.status === "pending_approval"
+                  {invoice.processing_status === "Approval Pending"
                     ? "Pending manager approval"
                     : "Pending internal validation"}
                 </p>
@@ -373,16 +364,18 @@ export default function InvoiceDetailsPage() {
               type="button"
               onClick={() =>
                 router.push(
-                  invoice.status === "pending_approval"
+                  invoice.processing_status === "Approval Pending" ||
+                  invoice.processing_status === "Approved" ||
+                  invoice.processing_status === "Rejected"
                     ? `/dashboard/invoices/${invoice.id}/approval`
                     : `/dashboard/invoices/${invoice.id}/validation`
                 )
               }
               className="w-full py-2.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md shadow-sm hover:shadow-md transition-all"
             >
-              {invoice.status === "pending_approval"
+              {invoice.processing_status === "Approval Pending"
                 ? "Go to Approval"
-                : invoice.status === "approved" || invoice.status === "rejected"
+                : invoice.processing_status === "Approved" || invoice.processing_status === "Rejected"
                 ? "View Approval Record"
                 : "Go to Validation"}
             </button>

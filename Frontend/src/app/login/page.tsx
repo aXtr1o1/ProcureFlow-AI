@@ -16,7 +16,7 @@ const TITLES: Record<View, { title: string; subtitle: string }> = {
   signupCredentials: {
     title: "Create Account",
     subtitle: "Enter your details to create a corporate profile",
-  },
+  },  
 };
 
 export default function LoginPage() {
@@ -45,6 +45,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+    console.log("Sign In Button Clicked");
     const res = await signIn(email, password);
     setSubmitting(false);
     if (res.ok) {

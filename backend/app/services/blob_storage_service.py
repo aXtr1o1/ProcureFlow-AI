@@ -38,7 +38,7 @@ class BlobStorageService:
 
 
     def _ocr_blob_name(self, document_id: str) -> str:
-        return f"{settings.AZURE_OCR_FOLDER}/{document_id}.txt"
+        return f"{settings.AZURE_OCR_FOLDER}/{document_id}.json"
 
 
     def _summary_blob_name(self, document_id: str) -> str:
@@ -80,25 +80,68 @@ class BlobStorageService:
     # Upload OCR Text
     # --------------------------------------------------
 
-    def upload_ocr_text(
+    def upload_ocr_data(
         self,
         document_id: str,
-        text: str
+        extracted_fields: dict
     ) -> dict:
 
-        blob_name = self._ocr_blob_name(document_id)
+        json_blob = self._ocr_blob_name(document_id)
 
-        blob_client = self.container_client.get_blob_client(blob_name)
+        json_client = self.container_client.get_blob_client(
+            json_blob
+        )
 
-        blob_client.upload_blob(
-            text,
+        # ---------------------------------------
+        # Create OCR Text String
+        # ---------------------------------------
+
+        ocr_text = "\n".join([
+            f"Invoice Number: {extracted_fields.get('invoice_number')}",
+            f"Vendor: {extracted_fields.get('vendor_name')}",
+            f"Invoice Date: {extracted_fields.get('invoice_date')}",
+            f"Currency: {extracted_fields.get('currency')}",
+            f"Amount: {extracted_fields.get('total_amount')}",
+            "",
+            "Items:",
+            *[
+                f"{item.get('description')} Qty:{item.get('quantity')} Price:{item.get('unit_price')}"
+                for item in extracted_fields.get("line_items", [])
+            ]
+        ])
+
+        # ---------------------------------------
+        # Create JSON document
+        # ---------------------------------------
+
+        json_document = {
+            "id": document_id,
+            "invoiceNumber": extracted_fields.get("invoice_number"),
+            "vendorName": extracted_fields.get("vendor_name"),
+            "invoiceDate": extracted_fields.get("invoice_date"),
+            "amount": extracted_fields.get("total_amount"),
+            "currency": extracted_fields.get("currency"),
+            "ocrText": ocr_text,
+            "blobUrl": f"{self.container_client.url}/{self._invoice_blob_name(document_id, 'pdf')}",
+            "status": extracted_fields.get("status", "Uploaded")
+        }
+
+        # ---------------------------------------
+        # Upload JSON
+        # ---------------------------------------
+
+        json_client.upload_blob(
+            json.dumps(
+                json_document,
+                ensure_ascii=False
+            ),
             overwrite=True
         )
 
         return {
             "document_id": document_id,
-            "blob_name": blob_name,
-            "blob_url": blob_client.url
+            "json_blob_name": json_blob,
+            "json_blob_url": json_client.url
         }
 
     # --------------------------------------------------
@@ -178,6 +221,7 @@ class BlobStorageService:
         blob_client = self.container_client.get_blob_client(blob_name)
 
         return blob_client.download_blob().readall().decode("utf-8")
+
 
     # --------------------------------------------------
     # Delete Blob

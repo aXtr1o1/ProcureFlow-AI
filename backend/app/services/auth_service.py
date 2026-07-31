@@ -1,12 +1,12 @@
 from sqlalchemy.orm import Session
-
+from sqlalchemy import or_
 from app.database.models import User
 from app.core.security import (
     hash_password,
     verify_password,
     create_access_token,
 )
-
+print(">>> AuthService loaded from:", __file__)
 
 class AuthService:
 
@@ -57,26 +57,31 @@ class AuthService:
     @staticmethod
     def login(
         db: Session,
-        username: str,
+        username_or_email: str,
         password: str,
     ):
-        """
-        Authenticate user and generate JWT token.
-        """
-
+        print("LOGIN INPUT:", username_or_email)
         user = (
             db.query(User)
-            .filter(User.username == username)
+            .filter(
+                or_(
+                    User.username == username_or_email,
+                    User.email == username_or_email,
+                )
+            )
             .first()
         )
+
+        print("USER FOUND:", user)
+
+        if user:
+            print("DB Username:", user.username)
+            print("DB Email:", user.email)
 
         if not user:
             raise Exception("Invalid username or password.")
 
-        if not verify_password(
-            password,
-            user.password_hash,
-        ):
+        if not verify_password(password, user.password_hash):
             raise Exception("Invalid username or password.")
 
         access_token = create_access_token(

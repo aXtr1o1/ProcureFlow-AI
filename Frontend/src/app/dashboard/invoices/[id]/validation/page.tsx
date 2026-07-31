@@ -2,7 +2,35 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getInvoice, sendToApproval, fmtDate, type Invoice } from "@/lib/invoices";
+import { getInvoice } from "@/services/api";
+import { fmtDate } from "@/lib/invoices";
+
+interface LineItem {
+  id: number;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  amount: number;
+}
+
+interface Invoice {
+  id: number;
+  invoice_number: string;
+  vendor_name: string;
+  vendor_address: string;
+  customer_name: string;
+  invoice_date: string;
+  due_date: string;
+  purchase_order_number: string | null;
+  currency: string;
+  subtotal: number;
+  tax: number;
+  total_amount: number;
+  processing_status: string;
+  blob_name: string;
+  blob_url: string;
+  line_items: LineItem[];
+}
 
 export default function InvoiceValidationPage() {
   const params = useParams<{ id: string }>();
@@ -12,9 +40,17 @@ export default function InvoiceValidationPage() {
   const [flagged, setFlagged] = useState(false);
 
   useEffect(() => {
-    setInvoice(getInvoice(params.id) ?? null);
-  }, [params.id]);
+      const loadInvoice = async () => {
+          try {
+              const response = await getInvoice(params.id);
+              setInvoice(response.data);
+          } catch {
+              setInvoice(null);
+          }
+      };
 
+      loadInvoice();
+  }, [params.id]);
   if (invoice === undefined) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-surface">
@@ -41,11 +77,11 @@ export default function InvoiceValidationPage() {
 
   const handleGoToApproval = () => {
     setSending(true);
-    sendToApproval(invoice.id);
+
     setTimeout(() => {
-      router.push(`/dashboard/invoices/${invoice.id}/approval`);
+        router.push(`/dashboard/invoices/${invoice.id}/approval`);
     }, 600);
-  };
+};
 
   return (
     <main className="relative w-full bg-surface min-h-[calc(100vh-80px)] px-lg">
@@ -80,11 +116,8 @@ export default function InvoiceValidationPage() {
           <div className="flex justify-between items-start mb-md">
             <div className="flex flex-col">
               <h2 className="font-headline-lg-mobile text-headline-lg-mobile text-on-surface mb-xs">
-                {invoice.vendor}
+                {invoice.vendor_name}
               </h2>
-              <p className="font-body-sm text-body-sm text-on-surface-variant">
-                Vendor ID: {invoice.vendorId}
-              </p>
             </div>
             <div className="bg-surface-container p-sm rounded-lg">
               <span className="material-symbols-outlined text-primary">
@@ -98,7 +131,7 @@ export default function InvoiceValidationPage() {
                 Invoice #
               </span>
               <span className="font-body-md text-body-md text-on-surface font-semibold">
-                {invoice.invoiceNumber}
+                {invoice.invoice_number}
               </span>
             </div>
             <div className="flex flex-col text-right">
@@ -106,7 +139,7 @@ export default function InvoiceValidationPage() {
                 Date
               </span>
               <span className="font-body-md text-body-md text-on-surface">
-                {fmtDate(invoice.date)}
+                {fmtDate(invoice.invoice_date)}
               </span>
             </div>
             <div className="flex flex-col">
@@ -114,15 +147,15 @@ export default function InvoiceValidationPage() {
                 Amount Due
               </span>
               <span className="font-title-md text-title-md text-on-surface">
-                ${invoice.amount.toFixed(2)}
+                ${invoice.total_amount.toFixed(2)}
               </span>
             </div>
             <div className="flex flex-col text-right">
               <span className="font-label-sm text-label-sm text-on-surface-variant mb-xs">
-                Terms
+                Currency
               </span>
               <span className="font-body-md text-body-md text-on-surface">
-                {invoice.terms}
+                {invoice.currency}
               </span>
             </div>
           </div>
@@ -159,14 +192,6 @@ export default function InvoiceValidationPage() {
               </span>
               <span className="font-label-md text-label-md">PO Match</span>
             </div>
-            <div className="flex items-center gap-xs px-sm py-1.5 bg-primary/10 rounded-full text-primary">
-              <span className="material-symbols-outlined text-[14px]">
-                auto_awesome
-              </span>
-              <span className="font-label-md text-label-md">
-                OCR Confidence: {invoice.ocrConfidence}%
-              </span>
-            </div>
             <div className="flex items-center gap-xs px-sm py-1.5 bg-green-50 rounded-full text-green-700">
               <span className="material-symbols-outlined text-[14px]">
                 check_circle
@@ -180,23 +205,22 @@ export default function InvoiceValidationPage() {
         <div className="flex flex-col gap-sm">
           <div className="flex items-center justify-between px-xs">
             <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">
-              Line Items ({invoice.lineItems.length})
+              Line Items ({invoice.line_items.length})
             </span>
           </div>
           <div className="bg-surface-container-low rounded-xl overflow-hidden shadow-sm">
-            {invoice.lineItems.map((item, i) => (
+            {invoice.line_items.map((item, i) => (
               <div
                 key={item.id}
                 className={`p-md flex justify-between items-center bg-surface-container-lowest ${
-                  i < invoice.lineItems.length - 1 ? "mb-[1px]" : ""
+                  i < invoice.line_items.length - 1 ? "mb-[1px]" : ""
                 }`}
               >
                 <div className="flex flex-col gap-xs">
                   <span className="font-body-md text-body-md text-on-surface font-semibold">
-                    {item.name}
+                    {item.description}
                   </span>
                   <span className="font-body-sm text-body-sm text-on-surface-variant">
-                    {item.sku}
                   </span>
                 </div>
                 <div className="flex flex-col items-end">
@@ -204,7 +228,7 @@ export default function InvoiceValidationPage() {
                     ${item.amount.toFixed(2)}
                   </span>
                   <span className="font-label-sm text-label-sm text-on-surface-variant">
-                    Qty: {item.qty}
+                    Qty: {item.quantity}
                   </span>
                 </div>
               </div>

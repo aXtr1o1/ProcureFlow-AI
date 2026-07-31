@@ -1,16 +1,13 @@
-from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List
 
 from pydantic import BaseModel, ConfigDict
 
 
 # ==========================================================
-# Current Invoice Status
+# Search Result Item
 # ==========================================================
-class CurrentInvoiceStatusResponse(BaseModel):
-    invoice_id: int
-    invoice_number: str
-    processing_status: str
+class SearchItem(BaseModel):
+    data: Dict[str, Any]
 
     model_config = ConfigDict(
         from_attributes=True
@@ -18,14 +15,12 @@ class CurrentInvoiceStatusResponse(BaseModel):
 
 
 # ==========================================================
-# Invoice Status History
+# Search Response
 # ==========================================================
-class InvoiceStatusResponse(BaseModel):
-    invoice_id: int
-    status: str
-    remarks: Optional[str]
-    updated_by: str
-    created_at: datetime
+class SearchResponse(BaseModel):
+    query: str
+    total_results: int
+    results: List[Dict[str, Any]]
 
     model_config = ConfigDict(
         from_attributes=True
