@@ -1,0 +1,67 @@
+name: CI/CD Deploy to AWS EC2 on Testing Branch
+
+on:
+  push:
+    branches:
+      - testing-branch
+
+  pull_request:
+    branches:
+      - testing-branch
+
+jobs:
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify Secrets
+        run: |
+          test -n "${{ secrets.EC2_HOST }}" || (echo "EC2_HOST missing" && exit 1)
+          test -n "${{ secrets.EC2_SSH_KEY }}" || (echo "EC2_SSH_KEY missing" && exit 1)
+          echo "All required secrets are available."
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            cd /home/ubuntu/ProcureFlow-AI
+
+            echo "Updating repository..."
+            git reset --hard
+            git checkout testing-branch
+            echo "Pulling latest code..."
+            git fetch origin
+            git pull origin testing-branch
+
+            echo "Activating virtual environment..."
+            source backend/venv/bin/activate
+
+            echo "Upgrading pip..."
+            python -m pip install --upgrade pip
+
+            echo "Installing dependencies..."
+            pip install -r backend/requirements.txt
+
+            echo "Restarting service..."
+            sudo systemctl daemon-reload
+            sudo systemctl restart procureflow-backend
+
+            echo "Checking service status..."
+            sudo systemctl status procureflow-backend --no-pager
+
+            echo "Deployment completed successfully."
