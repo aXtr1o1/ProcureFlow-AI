@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from fastapi import Depends
 from app.database.database import get_db
 
+from pydantic import BaseModel
+
 from app.database.models import Invoice, InvoiceLineItem
 from app.services.invoice_service import InvoiceService
 from app.services.validation_service import ValidationService

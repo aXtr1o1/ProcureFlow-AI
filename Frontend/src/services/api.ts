@@ -232,3 +232,48 @@ export async function getApprovalHistory(id: number | string) {
 
     return await response.json();
 }
+
+export async function searchInvoice(query: string) {
+
+    const token = localStorage.getItem("access_token");
+
+    const response = await fetch(
+        `${API_URL}/search?query=${encodeURIComponent(query)}`,
+        {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.detail);
+    }
+
+    return data;
+}
+
+export async function searchInvoiceByNumber(invoiceNumber: string) {
+
+    const token = localStorage.getItem("access_token");
+
+    const response = await fetch(
+        `${API_URL}/search/invoice/${encodeURIComponent(invoiceNumber)}`,
+        {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.detail);
+    }
+
+    return data;
+}

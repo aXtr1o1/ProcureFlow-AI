@@ -52,7 +52,6 @@ class AzureSearchService:
 
         results = self.client.search(
             search_text=invoice_number,
-            filter=f"invoiceNumber eq '{invoice_number}'",
             top=5
         )
 
@@ -71,43 +70,7 @@ class AzureSearchService:
 
         results = self.client.search(
             search_text=vendor_name,
-            filter=f"vendorName eq '{vendor_name}'"
-        )
-
-        return [
-            dict(result)
-            for result in results
-        ]
-
-    # ======================================================
-    # Search by Customer
-    # ======================================================
-    def search_by_customer(
-        self,
-        customer_name: str
-    ) -> List[dict]:
-
-        results = self.client.search(
-            search_text=customer_name,
-            filter=f"customer_name eq '{customer_name}'"
-        )
-
-        return [
-            dict(result)
-            for result in results
-        ]
-
-    # ======================================================
-    # Search by Purchase Order Number
-    # ======================================================
-    def search_by_po_number(
-        self,
-        po_number: str
-    ) -> List[dict]:
-
-        results = self.client.search(
-            search_text=po_number,
-            filter=f"po_number eq '{po_number}'"
+            top=10
         )
 
         return [
