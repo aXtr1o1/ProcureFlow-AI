@@ -12,6 +12,7 @@ from app.api.approval import router as approval_router
 from app.api import purchase_orders
 from app.api import matching
 from app.api import azure_openai
+from app.api import search
 from app.api import summary
 
 app = FastAPI(
@@ -20,6 +21,7 @@ app = FastAPI(
 )
 
 app.add_middleware(
+    CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
@@ -32,6 +34,7 @@ app.include_router(approval_router)
 app.include_router(purchase_orders.router)
 app.include_router(matching.router)
 app.include_router(azure_openai.router)
+app.include_router(search.router)
 app.include_router(summary.router)
 
 @app.get("/")

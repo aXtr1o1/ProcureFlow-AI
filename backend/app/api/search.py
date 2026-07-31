@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -39,12 +40,44 @@ def search_documents(
             detail=str(e)
         )
 
+    formatted_results = []
+
+    for item in results:
+        try:
+            invoice = json.loads(item["content"])
+
+            # Skip non-invoice documents
+            if not invoice.get("invoice_number"):
+                continue
+
+            formatted_results.append({
+                "id": item.get("id"),
+                "invoice_number": invoice.get("invoice_number"),
+                "vendor_name": invoice.get("vendor_name"),
+                "invoice_date": invoice.get("invoice_date"),
+                "total_amount": invoice.get("total_amount"),
+                "processing_status": invoice.get("processing_status", "Uploaded"),
+                "blob_name": invoice.get("blob_name"),
+                "blob_url": invoice.get("blob_url"),
+            })
+
+        except Exception:
+            continue
+
+
+    # Remove duplicate invoices
+    unique_results = {}
+
+    for invoice in formatted_results:
+        unique_results[invoice["invoice_number"]] = invoice
+
+    formatted_results = list(unique_results.values())
+
     return SearchResponse(
         query=query,
-        total_results=len(results),
-        results=results
+        total_results=len(formatted_results),
+        results=formatted_results
     )
-
 
 # ==========================================================
 # Search by Invoice Number
@@ -59,22 +92,57 @@ def search_invoice(
 ):
     service = AzureSearchService(db)
 
-    results = service.search_by_invoice_number(
-        invoice_number
-    )
+    try:
+        results = service.search_by_invoice_number(invoice_number)
 
-    if not results:
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invoice not found."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
+
+    formatted_results = []
+
+    for item in results:
+
+        try:
+
+            invoice = json.loads(item["content"])
+
+            if not invoice.get("invoice_number"):
+                continue
+
+            formatted_results.append({
+
+                "id": item.get("id"),
+
+                "invoice_number": invoice.get("invoice_number"),
+
+                "vendor_name": invoice.get("vendor_name"),
+
+                "invoice_date": invoice.get("invoice_date"),
+
+                "total_amount": invoice.get("total_amount"),
+
+                "processing_status": invoice.get(
+                    "processing_status",
+                    "Uploaded"
+                ),
+
+                "blob_name": invoice.get("blob_name"),
+
+                "blob_url": invoice.get("blob_url")
+
+            })
+
+        except Exception:
+            continue
 
     return SearchResponse(
         query=invoice_number,
-        total_results=len(results),
-        results=results
+        total_results=len(formatted_results),
+        results=formatted_results
     )
-
 
 # ==========================================================
 # Search by Vendor

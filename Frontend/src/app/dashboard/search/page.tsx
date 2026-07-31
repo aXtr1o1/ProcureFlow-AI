@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/invoices";
-import { getInvoices } from "@/services/api";
+import {
+    getInvoices,
+    searchInvoice,
+    searchInvoiceByNumber
+} from "@/services/api";
 
 interface Invoice {
   id: number;
@@ -61,6 +65,7 @@ export default function InvoiceSearchPage() {
         try {
             const response = await getInvoices();
             setInvoices(response.data);
+            setResults(response.data);
             console.log("Invoices:", response.data);
         } catch (err) {
             console.error(err);
@@ -70,58 +75,88 @@ export default function InvoiceSearchPage() {
     loadInvoices();
 }, []);
 
-  const results = useMemo(() => {
-    const q = query
-      .trim()
-      .toLowerCase()
-      .replace("amount due", "")
-      .replace("$", "")
-      .trim();
-      console.log("Query:", q);
-      console.table(
-        invoices.map(i => ({
-          vendor: i.vendor_name,
-          invoice: i.invoice_number,
-          amount: i.total_amount
-        }))
-      );
-    const thirtyDaysAgo = Date.now() - 1000 * 60 * 60 * 24 * 30;
+  // const results = useMemo(() => {
+  //   const q = query
+  //     .trim()
+  //     .toLowerCase()
+  //     .replace("amount due", "")
+  //     .replace("$", "")
+  //     .trim();
+  //     console.log("Query:", q);
+  //     console.table(
+  //       invoices.map(i => ({
+  //         vendor: i.vendor_name,
+  //         invoice: i.invoice_number,
+  //         amount: i.total_amount
+  //       }))
+  //     );
+  //   const thirtyDaysAgo = Date.now() - 1000 * 60 * 60 * 24 * 30;
 
-    return invoices.filter((inv) => {
-      const amount = inv.total_amount.toFixed(2);
+  //   return invoices.filter((inv) => {
+  //     const amount = inv.total_amount.toFixed(2);
 
-      const matchesQuery =
-        !q ||
-        inv.vendor_name
-        ?.replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase()
-        .includes(q) ||
-        inv.invoice_number.toLowerCase().includes(q) ||
-        inv.processing_status.toLowerCase().includes(q) ||
-        fmtDate(inv.invoice_date).toLowerCase().includes(q) ||
-        amount.includes(q.replace("$", ""));
+  //     const matchesQuery =
+  //       !q ||
+  //       inv.vendor_name
+  //       ?.replace(/\s+/g, " ")
+  //       .trim()
+  //       .toLowerCase()
+  //       .includes(q) ||
+  //       inv.invoice_number.toLowerCase().includes(q) ||
+  //       inv.processing_status.toLowerCase().includes(q) ||
+  //       fmtDate(inv.invoice_date).toLowerCase().includes(q) ||
+  //       amount.includes(q.replace("$", ""));
 
-      if (!matchesQuery) return false;
+  //     if (!matchesQuery) return false;
 
-      switch (activeChip) {
-        case "pending_approval":
-          return inv.processing_status === "Pending Validation";
-        case "last_30":
-          return new Date(inv.created_at).getTime() >= thirtyDaysAgo;
-        case "high_value":
-          return inv.total_amount >= 1000;
-        default:
-          return true;
-      }
-    });
-  }, [invoices, query, activeChip]);
+  //     switch (activeChip) {
+  //       case "pending_approval":
+  //         return inv.processing_status === "Pending Validation";
+  //       case "last_30":
+  //         return new Date(inv.created_at).getTime() >= thirtyDaysAgo;
+  //       case "high_value":
+  //         return inv.total_amount >= 1000;
+  //       default:
+  //         return true;
+  //     }
+  //   });
+  // }, [invoices, query, activeChip]);
+  const [results, setResults] = useState<Invoice[]>([]);
 
   const runSearch = (term: string) => {
     setQuery(term);
     if (term.trim() && !recent.includes(term.trim())) {
       setRecent((prev) => [term.trim(), ...prev].slice(0, 5));
     }
+  };
+
+  const searchInvoices = async (term: string) => {
+      try {
+
+          let response;
+
+          if (/^RP-INV/i.test(term.trim())) {
+
+              response = await searchInvoiceByNumber(term);
+
+          } else {
+
+              response = await searchInvoice(term);
+
+          }
+
+setResults(response.results);
+          console.log(response.results);
+
+          setResults(response.results);
+
+          if (term.trim() && !recent.includes(term.trim())) {
+              setRecent((prev) => [term.trim(), ...prev].slice(0, 5));
+          }
+
+      } catch (err) {
+          console.error(err);
+      }
   };
 
   const handleDownload = (inv: Invoice) => {
@@ -150,23 +185,39 @@ export default function InvoiceSearchPage() {
         </p>
       </div>
 
-      <div className="relative group mb-4 max-w-2xl">
-        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-          <span className="material-symbols-outlined text-primary text-[24px]">
-            drive_file_rename_outline
-          </span>
+      <div className="flex gap-3 mb-4 max-w-2xl">
+
+            <div className="relative flex-1">
+
+                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                    <span className="material-symbols-outlined text-primary text-[24px]">
+                        drive_file_rename_outline
+                    </span>
+                </div>
+
+                <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            searchInvoices(query);
+                        }
+                    }}
+                    className="w-full h-14 pl-12 pr-4 rounded-xl bg-surface-container-lowest shadow-sm font-body-md text-on-surface"
+                    placeholder="Try 'Invoices from Northwind over $1k'..."
+                    type="text"
+                />
+
+            </div>
+
+            <button
+                onClick={() => searchInvoices(query)}
+                className="px-6 rounded-xl bg-primary text-white hover:bg-primary/90"
+            >
+                Search
+            </button>
+
         </div>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") runSearch(query);
-          }}
-          className="w-full h-14 pl-12 pr-4 rounded-xl bg-surface-container-lowest shadow-sm font-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all border-none"
-          placeholder="Try 'Invoices from Northwind over $1k'..."
-          type="text"
-        />
-      </div>
 
       {/* Quick filter chips */}
       <div className="flex gap-sm overflow-x-auto pb-2 mb-8">
@@ -213,7 +264,10 @@ export default function InvoiceSearchPage() {
             {recent.map((term) => (
               <button
                 key={term}
-                onClick={() => runSearch(term)}
+                onClick={() => {
+                  setQuery(term);
+                  searchInvoices(term);
+              }}
                 className="flex items-center gap-3 p-3 bg-surface-container-low rounded-lg hover:bg-surface-container transition-colors text-left"
               >
                 <span className="material-symbols-outlined text-on-surface-variant text-[20px]">
@@ -285,7 +339,7 @@ export default function InvoiceSearchPage() {
                         Amount Due
                       </span>
                       <span className="font-headline-lg text-headline-lg text-on-surface">
-                        ${inv.total_amount.toFixed(2)}
+                        ${Number(inv.total_amount ?? 0).toFixed(2)}
                       </span>
                     </div>
                     <div className="flex gap-sm">
