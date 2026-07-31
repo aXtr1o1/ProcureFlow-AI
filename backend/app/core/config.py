@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     AZURE_OPENAI_API_KEY: str
     AZURE_OPENAI_DEPLOYMENT_NAME: str
 
+    AZURE_SEARCH_ENDPOINT: str
+    AZURE_SEARCH_API_KEY: str
+    AZURE_SEARCH_INDEX_NAME: str
+
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60

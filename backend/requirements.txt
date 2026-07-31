@@ -21,4 +21,6 @@ azure-search-documents==11.5.2
 
 openai==1.99.9
 
+azure-search-documents
+
 email-validator==2.2.0
