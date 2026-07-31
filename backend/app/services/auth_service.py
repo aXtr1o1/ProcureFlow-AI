@@ -6,7 +6,6 @@ from app.core.security import (
     verify_password,
     create_access_token,
 )
-print(">>> AuthService loaded from:", __file__)
 
 class AuthService:
 
@@ -60,7 +59,6 @@ class AuthService:
         username_or_email: str,
         password: str,
     ):
-        print("LOGIN INPUT:", username_or_email)
         user = (
             db.query(User)
             .filter(
@@ -71,12 +69,6 @@ class AuthService:
             )
             .first()
         )
-
-        print("USER FOUND:", user)
-
-        if user:
-            print("DB Username:", user.username)
-            print("DB Email:", user.email)
 
         if not user:
             raise Exception("Invalid username or password.")
