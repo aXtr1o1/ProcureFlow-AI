@@ -61,6 +61,7 @@ export default function InvoiceSearchPage() {
         try {
             const response = await getInvoices();
             setInvoices(response.data);
+            console.log("Invoices:", response.data);
         } catch (err) {
             console.error(err);
         }
@@ -70,14 +71,36 @@ export default function InvoiceSearchPage() {
 }, []);
 
   const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query
+      .trim()
+      .toLowerCase()
+      .replace("amount due", "")
+      .replace("$", "")
+      .trim();
+      console.log("Query:", q);
+      console.table(
+        invoices.map(i => ({
+          vendor: i.vendor_name,
+          invoice: i.invoice_number,
+          amount: i.total_amount
+        }))
+      );
     const thirtyDaysAgo = Date.now() - 1000 * 60 * 60 * 24 * 30;
 
     return invoices.filter((inv) => {
+      const amount = inv.total_amount.toFixed(2);
+
       const matchesQuery =
         !q ||
-        inv.vendor_name.toLowerCase().includes(q) ||
-        inv.invoice_number.toLowerCase().includes(q);
+        inv.vendor_name
+        ?.replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase()
+        .includes(q) ||
+        inv.invoice_number.toLowerCase().includes(q) ||
+        inv.processing_status.toLowerCase().includes(q) ||
+        fmtDate(inv.invoice_date).toLowerCase().includes(q) ||
+        amount.includes(q.replace("$", ""));
 
       if (!matchesQuery) return false;
 

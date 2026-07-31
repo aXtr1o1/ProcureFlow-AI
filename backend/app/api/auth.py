@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from fastapi.security import OAuth2PasswordRequestForm
+
 from app.core.security import get_current_user
 from app.database.models import User
 
@@ -12,8 +14,6 @@ from app.schemas.auth_schema import (
     LoginResponse,
     UserResponse
 )
-import inspect
-print(inspect.signature(AuthService.login))
 
 router = APIRouter(
     prefix="/auth",
@@ -64,8 +64,6 @@ def login(
         }
 
     except Exception as e:
-        print("LOGIN ERROR:", repr(e))
-
         raise HTTPException(
             status_code=401,
             detail=str(e)
@@ -83,4 +81,20 @@ def logout():
 
     return {
         "message": "Logout successful."
+    }
+
+@router.post("/token")
+def login_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    token = AuthService.login(
+        db=db,
+        username_or_email=form_data.username,
+        password=form_data.password,
+    )
+
+    return {
+        "access_token": token["access_token"],
+        "token_type": "bearer",
     }

@@ -244,8 +244,6 @@ async def analyze_invoice(
 
         # Analyze the invoice
         result = document_service.analyze_invoice(file_bytes)
-        print(type(result))
-        print(result)
 
         # Store extracted fields in OCR Text folder
         ocr_blob = blob_service.upload_ocr_data(
