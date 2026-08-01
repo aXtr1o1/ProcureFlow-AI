@@ -83,7 +83,8 @@ def verify_access_token(token: str):
 
         return payload
 
-    except JWTError:
+    except JWTError as e:
+        print("JWT ERROR:", str(e))
         return None
 
 
@@ -96,7 +97,11 @@ def get_current_user(
     db: Session = Depends(get_db)
 ):
 
+    print("TOKEN:", token)
+
     payload = verify_access_token(token)
+
+    print("PAYLOAD:", payload)
 
     if payload is None:
         raise HTTPException(
@@ -105,6 +110,8 @@ def get_current_user(
         )
 
     user_id = payload.get("user_id")
+
+    print("USER ID:", user_id)
 
     if user_id is None:
         raise HTTPException(
@@ -117,6 +124,8 @@ def get_current_user(
         .filter(User.id == user_id)
         .first()
     )
+
+    print("USER:", user)
 
     if user is None:
         raise HTTPException(

@@ -21,6 +21,11 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    invoices = relationship(
+        "Invoice",
+        back_populates="user"
+    )
+
     username = Column(String(100), unique=True, nullable=False)
     email = Column(String(255), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
@@ -61,6 +66,17 @@ class Invoice(Base):
     __tablename__ = "invoices"
 
     id = Column(Integer, primary_key=True, index=True)
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False
+    )
+
+    user = relationship(
+        "User",
+        back_populates="invoices"
+    )
 
     invoice_number = Column(String(100), unique=True, nullable=True)
 

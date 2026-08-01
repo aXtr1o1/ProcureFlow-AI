@@ -31,11 +31,17 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export async function listInvoices(): Promise<Invoice[]> {
+
+  const token = localStorage.getItem("access_token");
+
+  console.log("TOKEN:", token);
+
   const response = await fetch(`${API_URL}/invoices`, {
     headers: {
-      Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+      Authorization: `Bearer ${token}`,
     },
   });
+
 
   if (!response.ok) {
     throw new Error("Failed to fetch invoices");

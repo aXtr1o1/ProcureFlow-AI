@@ -38,90 +38,6 @@ function buildGreeting(invoices: Invoice[]): string {
   } pending review. How can I help you today?`;
 }
 
-function answerQuestion(
-  question: string,
-  invoices: Invoice[]
-): { text: string; cards?: Invoice[] } {
-  const q = question.toLowerCase();
-
-  // Try to match a vendor name mentioned in the question.
-  const vendorMatch = invoices.find((inv) =>
-    q.includes(inv.vendor_name.toLowerCase().split(" ")[0].toLowerCase())
-  );
-
-  if (q.includes("summar")) {
-    const total = invoices.reduce((s, i) => s + i.total_amount, 0);
-    return {
-      text: `This month I found ${invoices.length} invoices totaling $${total.toFixed(
-        2
-      )}. ${invoices.filter((i) => i.processing_status === "Approved").length} are approved, ${
-        invoices.filter(
-          (i) => i.processing_status === "Pending Validation" || i.processing_status === "Pending Approval"
-        ).length
-      } are still in review.`,
-    };
-  }
-
-  if (q.includes("duplicate")) {
-    return {
-      text: "Scanning for duplicates... I didn't find any exact matches on invoice number and amount, but I'll keep watching as new invoices come in.",
-    };
-  }
-
-  if (q.includes("deadline") || q.includes("due")) {
-    const upcoming = [...invoices]
-      .filter((i) => i.processing_status !== "Approved" && i.processing_status !== "Rejected")
-      .sort(
-        (a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
-      )
-      .slice(0, 3);
-    if (upcoming.length === 0) {
-      return { text: "There are no open invoices with upcoming due dates." };
-    }
-    return {
-      text: `Here are the closest upcoming due dates across your open invoices:`,
-      cards: upcoming,
-    };
-  }
-
-  if (q.includes("pending") || q.includes("review") || q.includes("flag")) {
-    const pending = invoices.filter(
-      (i) => i.processing_status === "Pending Validation" || i.processing_status === "Pending Approval"
-    );
-    if (pending.length === 0) {
-      return { text: "Nothing is currently pending review — you're all caught up." };
-    }
-    return {
-      text: `I found ${pending.length} invoice${
-        pending.length === 1 ? "" : "s"
-      } pending review:`,
-      cards: pending.slice(0, 4),
-    };
-  }
-
-  if (vendorMatch) {
-    const vendorInvoices = invoices.filter(
-      (i) => i.vendor_name === vendorMatch.vendor_name
-    );
-    return {
-      text: `I found ${vendorInvoices.length} invoice${
-        vendorInvoices.length === 1 ? "" : "s"
-      } from ${vendorMatch.vendor_name}:`,
-      cards: vendorInvoices.slice(0, 4),
-    };
-  }
-
-  if (invoices.length === 0) {
-    return {
-      text: "You don't have any invoices uploaded yet — try uploading one and I can help you dig into it.",
-    };
-  }
-
-  return {
-    text: "I can help you search invoices, summarize spend, flag duplicates, or check upcoming due dates. Try asking about a specific vendor, or use one of the suggestions below.",
-  };
-}
-
 export default function AssistantPage() {
   const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -131,29 +47,27 @@ export default function AssistantPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const loadInvoices = async () => {
-      try {
-        const response = await getInvoices();
+  const loadInvoices = async () => {
+    try {
+      const data = await getInvoices();
 
-        const invs = response.data;
+      setInvoices(data.data || data);
 
-        setInvoices(invs);
+      setMessages([
+        {
+          id: crypto.randomUUID(),
+          role: "bot",
+          text: buildGreeting(data.data || data),
+          time: timeNow(),
+        },
+      ]);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-        setMessages([
-          {
-            id: crypto.randomUUID(),
-            role: "bot",
-            text: buildGreeting(invs),
-            time: timeNow(),
-          },
-        ]);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    loadInvoices();
-  }, []);
+  loadInvoices();
+}, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -162,35 +76,65 @@ export default function AssistantPage() {
     });
   }, [messages, typing]);
 
-  const send = (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
+  const send = async (text: string) => {
+  const trimmed = text.trim();
 
-    const userMsg: ChatMessage = {
+  if (!trimmed) return;
+
+  setMessages((prev) => [
+    ...prev,
+    {
       id: crypto.randomUUID(),
       role: "user",
       text: trimmed,
       time: timeNow(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput("");
-    setTyping(true);
+    },
+  ]);
 
-    setTimeout(() => {
-      const { text: answer, cards } = answerQuestion(trimmed, invoices);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "bot",
-          text: answer,
-          cards,
-          time: timeNow(),
+  setInput("");
+  setTyping(true);
+
+  try {
+    const response = await fetch(
+      "http://localhost:8000/azure-openai/chat",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      ]);
-      setTyping(false);
-    }, 700);
-  };
+        body: JSON.stringify({
+          message: trimmed,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        role: "bot",
+        text: data.response,
+        time: timeNow(),
+      },
+    ]);
+  } catch (err) {
+    console.error(err);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        role: "bot",
+        text: "Sorry, I couldn't process your request.",
+        time: timeNow(),
+      },
+    ]);
+  } finally {
+    setTyping(false);
+  }
+};
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -244,7 +188,7 @@ export default function AssistantPage() {
                                 {inv.invoice_number}
                               </p>
                               <p className="font-label-sm text-label-sm text-outline">
-                                ${inv.total_amount.toFixed(2)}
+                                {inv.currency} {inv.total_amount.toFixed(2)}
                               </p>
                             </div>
                           </div>

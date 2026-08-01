@@ -2,6 +2,11 @@ from fastapi import APIRouter, HTTPException
 
 from app.services.azure_openai_service import AzureOpenAIService
 
+from pydantic import BaseModel
+
+class ChatRequest(BaseModel):
+    message: str
+
 router = APIRouter(
     prefix="/azure-openai",
     tags=["Azure OpenAI"]
@@ -17,6 +22,25 @@ def test_connection():
         response = service.chat(
             "Reply with exactly: Azure OpenAI connection successful."
         )
+
+        return {
+            "success": True,
+            "response": response
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@router.post("/chat")
+def chat(request: ChatRequest):
+
+    service = AzureOpenAIService()
+
+    try:
+        response = service.chat(request.message)
 
         return {
             "success": True,

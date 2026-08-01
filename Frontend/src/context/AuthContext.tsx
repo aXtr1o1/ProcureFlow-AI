@@ -28,7 +28,6 @@ type AuthContextType = {
     email: string,
     password: string
   ) => Promise<{ ok: boolean; error?: string }>;
-  signInWithGoogle: () => Promise<{ ok: boolean }>;
   signOut: () => void;
 };
 
@@ -47,6 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
 
             const token = localStorage.getItem("access_token");
+            const cachedUser = localStorage.getItem(STORAGE_KEY);
+
+            if (cachedUser) {
+                setUser(JSON.parse(cachedUser));
+            }
 
             if (!token) {
                 setLoading(false);
@@ -57,9 +61,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             setUser(user);
 
-        } catch {
+        } catch (error) {
+
+            console.error("SESSION ERROR:", error);
 
             localStorage.removeItem("access_token");
+            localStorage.removeItem(STORAGE_KEY);
+
             setUser(null);
 
         } finally {
@@ -97,12 +105,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         data.access_token
       );
 
+      console.log("Token saved:", localStorage.getItem("access_token"));
+
       const currentUser = await getCurrentUser();
+
+      console.log("Current User:", currentUser);
 
       persist(currentUser);
 
       return {
-        ok: true,
+          ok: true,
       };
 
     } catch (err: any) {
@@ -146,22 +158,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   };
 
-  const signInWithGoogle: AuthContextType["signInWithGoogle"] = async () => {
-    await new Promise((r) => setTimeout(r, 500));
-    persist({ username: "Google User", email: "google.user@company.com" });
-    return { ok: true };
-  };
-
   const signOut = () => {
 
     localStorage.removeItem("access_token");
+    localStorage.removeItem(STORAGE_KEY);
 
     persist(null);
 
-  };
+};
 
   const value = useMemo(
-    () => ({ user, loading, signIn, signUp, signInWithGoogle, signOut }),
+    () => ({ user, loading, signIn, signUp, signOut }),
     [user, loading]
   );
 

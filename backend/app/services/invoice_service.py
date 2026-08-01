@@ -12,13 +12,14 @@ class InvoiceService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all_invoices(self):
+    def get_all_invoices(self, user_id: int):
         """
         Fetch all invoices from the database.
         """
 
         return (
             self.db.query(Invoice)
+            .filter(Invoice.user_id == user_id)
             .order_by(Invoice.id.desc())
             .all()
         )
@@ -35,6 +36,7 @@ class InvoiceService:
 
     def save_invoice(
         self,
+        user_id: int,
         invoice_data: dict,
         blob_name: str,
         blob_url: str,
@@ -45,6 +47,7 @@ class InvoiceService:
         try:
 
             invoice = Invoice(
+                user_id=user_id,
                 invoice_number=invoice_data.get("invoice_number"),
                 vendor_name=invoice_data.get("vendor_name"),
                 vendor_address=invoice_data.get("vendor_address"),
@@ -117,10 +120,13 @@ class InvoiceService:
 
         return status_log
 
-    def get_invoice_by_id(self, invoice_id: int):
+    def get_invoice_by_id(self, invoice_id: int, user_id: int):
         return (
             self.db.query(Invoice)
-            .filter(Invoice.id == invoice_id)
+            .filter(
+                Invoice.id == invoice_id,
+                Invoice.user_id == user_id
+            )
             .first()
         )
 

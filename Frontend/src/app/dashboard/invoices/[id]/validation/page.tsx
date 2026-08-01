@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getInvoice } from "@/services/api";
+import {
+    getInvoice,
+    updateInvoiceStatus,
+} from "@/services/api";
 import { fmtDate } from "@/lib/invoices";
 
 interface LineItem {
@@ -38,6 +41,7 @@ export default function InvoiceValidationPage() {
   const [invoice, setInvoice] = useState<Invoice | null | undefined>(undefined);
   const [sending, setSending] = useState(false);
   const [flagged, setFlagged] = useState(false);
+  const [showFlagMessage, setShowFlagMessage] = useState(false);
 
   useEffect(() => {
       const loadInvoice = async () => {
@@ -75,16 +79,44 @@ export default function InvoiceValidationPage() {
     );
   }
 
-  const handleGoToApproval = () => {
+  const handleGoToApproval = async () => {
+
     setSending(true);
 
-    setTimeout(() => {
-        router.push(`/dashboard/invoices/${invoice.id}/approval`);
-    }, 600);
+    try {
+
+        await updateInvoiceStatus(invoice.id);
+
+        router.push(
+            `/dashboard/invoices/${invoice.id}/approval`
+        );
+
+    } catch (error) {
+
+        console.error(error);
+
+    } finally {
+
+        setSending(false);
+
+    }
 };
 
   return (
+
     <main className="relative w-full bg-surface min-h-[calc(100vh-80px)] px-lg">
+      <div className="max-w-2xl mx-auto pt-6">
+        <button
+          type="button"
+          onClick={() => router.push(`/dashboard/invoices/${params.id}`)}
+          className="flex items-center gap-2 text-primary hover:underline font-label-md"
+        >
+          <span className="material-symbols-outlined text-[18px]">
+            arrow_back
+          </span>
+          Back to Invoice
+        </button>
+      </div>
       <div className="max-w-2xl mx-auto flex flex-col w-full pb-32 pt-8">
         {/* Status Header Section */}
         <div className="flex items-center justify-between py-md">
@@ -225,7 +257,7 @@ export default function InvoiceValidationPage() {
                 </div>
                 <div className="flex flex-col items-end">
                   <span className="font-body-md text-body-md text-on-surface font-semibold">
-                    ${item.amount.toFixed(2)}
+                    {invoice.currency} {item.amount.toFixed(2)}
                   </span>
                   <span className="font-label-sm text-label-sm text-on-surface-variant">
                     Qty: {item.quantity}
@@ -238,38 +270,75 @@ export default function InvoiceValidationPage() {
       </div>
 
       {/* Fixed Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 p-lg bg-surface/90 backdrop-blur-md border-t border-surface-variant/20 z-40">
-        <div className="max-w-md mx-auto flex gap-md">
-          <button
-            type="button"
-            onClick={() => setFlagged(true)}
-            disabled={flagged}
-            className="flex-1 h-12 rounded-xl bg-surface-container-highest text-on-surface-variant font-title-md text-title-md flex items-center justify-center gap-sm transition-all active:scale-95 disabled:opacity-60"
-          >
-            <span className="material-symbols-outlined text-[20px]">flag</span>
-            {flagged ? "Flagged" : "Flag"}
-          </button>
-          <button
-            type="button"
-            onClick={handleGoToApproval}
-            disabled={sending}
-            className="flex-[2] h-12 rounded-xl bg-primary text-on-primary font-title-md text-title-md flex items-center justify-center gap-sm shadow-md shadow-primary/20 transition-all active:scale-95 disabled:opacity-70"
-          >
-            {sending ? (
-              <span className="material-symbols-outlined animate-spin text-[20px]">
-                sync
-              </span>
-            ) : (
-              <>
-                Go to Approval
-                <span className="material-symbols-outlined text-[20px]">
-                  chevron_right
-                </span>
-              </>
-            )}
-          </button>
+<div className="fixed bottom-0 left-0 right-0 p-lg bg-surface/90 backdrop-blur-md border-t border-surface-variant/20 z-40">
+
+  {/* Center everything */}
+  <div className="max-w-md mx-auto">
+
+    {/* Buttons */}
+    <div className="flex gap-md">
+
+      {/* Flag */}
+      <div className="relative group flex-1">
+        <button
+          type="button"
+          onClick={() => {
+            setFlagged(true);
+            setShowFlagMessage(true);
+          }}
+          disabled={flagged}
+          className="w-full h-12 rounded-xl bg-surface-container-highest text-on-surface-variant font-title-md flex items-center justify-center gap-sm disabled:opacity-60"
+        >
+          <span className="material-symbols-outlined">
+            flag
+          </span>
+
+          {flagged ? "Flagged" : "Flag"}
+        </button>
+
+        {/* Tooltip */}
+        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-900 text-white text-xs rounded-md px-3 py-2 whitespace-nowrap shadow-lg">
+          Mark this invoice for manual review due to validation issues.
         </div>
       </div>
+
+      {/* Approval */}
+      <button
+        type="button"
+        onClick={handleGoToApproval}
+        disabled={sending}
+        className="flex-[2] h-12 rounded-xl bg-primary text-on-primary font-title-md flex items-center justify-center gap-sm"
+      >
+        {sending ? (
+          <span className="material-symbols-outlined animate-spin">
+            sync
+          </span>
+        ) : (
+          <>
+            Go to Approval
+            <span className="material-symbols-outlined">
+              chevron_right
+            </span>
+          </>
+        )}
+      </button>
+
+    </div>
+
+    {/* Success Message */}
+    {showFlagMessage && (
+      <div className="mt-3 rounded-lg bg-green-50 border border-green-300 px-4 py-3 text-green-700 text-sm flex items-center justify-center gap-2">
+        <span className="material-symbols-outlined">
+          check_circle
+        </span>
+
+        Invoice marked for manual review.
+      </div>
+    )}
+
+  </div>
+
+</div>
     </main>
   );
 }

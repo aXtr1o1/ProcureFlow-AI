@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
     analyzeInvoice,
     getInvoices,
+    getInvoice,
 } from "@/services/api";
 
 import {
@@ -18,6 +19,16 @@ type Step = {
   id: number;
   title: string;
   description: string;
+};
+
+const STATUS_TO_STEP = {
+    Uploaded: 0,
+    "AI Processing": 1,
+    "OCR Extraction": 2,
+    "OCR Completed": 3,
+    "Validation Completed": 3,
+    "PO Completed": 3,
+    Rejected: 3,
 };
 
 const STEPS: Step[] = [
@@ -47,20 +58,20 @@ const STATUS_LABEL: Record<string, string> = {
   Uploaded: "Uploaded",
   Matched: "Matched",
   "Review Required": "Review Required",
-  "Approval Pending": "Approval Pending",
-  Approved: "Approved",
+  "OCR Completed": "OCR Completed",
+  "Validation Completed": "Validation Completed",
+  "PO Completed": "PO Completed",
   Rejected: "Rejected",
-  "PO Generated": "PO Generated",
 };
 
 const STATUS_COLOR: Record<string, string> = {
   Uploaded: "text-primary",
   Matched: "text-green-700",
   "Review Required": "text-yellow-700",
-  "Approval Pending": "text-secondary",
-  Approved: "text-green-700",
+  "OCR Completed": "text-blue-600",
+  "Validation Completed": "text-green-700",
+  "PO Completed": "text-indigo-700",
   Rejected: "text-error",
-  "PO Generated": "text-blue-700",
 };
 
 export default function DashboardPage() {
@@ -79,7 +90,25 @@ export default function DashboardPage() {
   const [recent, setRecent] = useState<Invoice[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const updateSystemStatus = (status: string) => {
+
+    const currentStep = STATUS_TO_STEP[status] ?? 0;
+
+    setStepStates(
+      STEPS.map((_, index) => {
+
+        if (index < currentStep)
+          return "done";
+
+        if (index === currentStep)
+          return "active";
+
+        return "pending";
+
+      })
+    );
+  };
 
   const refreshRecent = useCallback(async () => {
       try {
@@ -110,13 +139,6 @@ export default function DashboardPage() {
    * Clear the processing timer when the user leaves this page.
    * This prevents state updates after the component is unmounted.
    */
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, []);
 
   const stats = {
     total: recent.length,
@@ -125,71 +147,70 @@ export default function DashboardPage() {
 
   const runProcessing = useCallback(
     async (file: File) => {
-      return new Promise<void>((resolve) => {
+      return new Promise<void>(async (resolve) => {
         setFileName(file.name);
         setCompleted(false);
         setRunning(true);
         setNewInvoiceId(null);
         setStepStates(STEPS.map(() => "pending"));
 
-        if (timerRef.current) {
-          clearInterval(timerRef.current);
-        }
-
-        let stepIndex = 0;
-
-        timerRef.current = setInterval(async () => {
-          setStepStates((previousStates) => {
-            const nextStates = [...previousStates];
-
-            if (stepIndex > 0) {
-              nextStates[stepIndex - 1] = "done";
-            }
-
-            if (stepIndex < STEPS.length) {
-              nextStates[stepIndex] = "active";
-            }
-
-            return nextStates;
-          });
-
-          stepIndex += 1;
-
-          if (stepIndex > STEPS.length) {
-            if (timerRef.current) {
-              clearInterval(timerRef.current);
-              timerRef.current = null;
-            }
-
-            setStepStates(STEPS.map(() => "done"));
-            setRunning(false);
-            setCompleted(true);
-
             try {
 
                 const result = await analyzeInvoice(file);
 
-                console.log(result);
-
                 if (result.success) {
 
-                  if (result.invoice?.id) {
-                      setNewInvoiceId(result.invoice.id);
-                  }
+                        const invoiceId = result.invoice_id;
 
-                  await refreshRecent();
+                        if (!invoiceId) {
+                            console.error("Invoice ID not returned:", result);
+                            resolve();
+                            return;
+                        }
 
-                  window.dispatchEvent(new Event("invoices:updated"));
+                        setNewInvoiceId(String(invoiceId));
 
-              } else {
+                        const interval = setInterval(async () => {
 
-                  alert(result.message);
+                          try {
 
-                  await refreshRecent();
+                              const response = await getInvoice(invoiceId);
+                              const invoice = response.data;
 
-                  router.push("/dashboard/invoices");
+                              updateSystemStatus(invoice.processing_status);
 
-              }
+                              if (
+                                invoice.processing_status === "OCR Completed" ||
+                                invoice.processing_status === "Validation Completed" ||
+                                invoice.processing_status === "PO Completed" ||
+                                invoice.processing_status === "Rejected"
+                            ) {
+
+                                  clearInterval(interval);
+
+                                  setCompleted(true);
+
+                                  setRunning(false);
+
+                                  await refreshRecent();
+
+                                  window.dispatchEvent(new Event("invoices:updated"));
+
+                                  router.push(`/dashboard/invoices/${invoiceId}/validation`);
+                              }
+
+                          } catch (error) {
+
+                              console.error(error);
+
+                              clearInterval(interval);
+
+                              setRunning(false);
+                          }
+
+                      }, 2000);
+
+                    }
 
               resolve();
 
@@ -200,10 +221,9 @@ export default function DashboardPage() {
                 alert("Invoice upload failed.");
 
                 setRunning(false);
+                resolve();
 
             }
-          }
-        }, 900);
       });
     },
     [refreshRecent],
@@ -278,7 +298,16 @@ export default function DashboardPage() {
          */}
         <div className="grid grid-cols-1 items-stretch gap-x-8 gap-y-8 lg:grid-cols-2">
           {/* Upload page heading */}
-          <div className="order-1 mx-auto flex w-full max-w-3xl flex-col justify-end gap-2 lg:col-start-1 lg:row-start-1">
+          <div
+            className="
+              order-1
+              flex
+              flex-col
+              gap-2
+              lg:col-start-1
+              lg:row-start-1
+            "
+          >
             <h1 className="font-display-lg text-display-lg text-on-surface">
               Upload Invoice
             </h1>
@@ -310,7 +339,15 @@ export default function DashboardPage() {
           </section>
 
           {/* Upload card */}
-          <section className="order-3 mx-auto h-full w-full max-w-3xl lg:col-start-1 lg:row-start-2">
+          <section
+            className="
+              order-3
+              h-full
+              w-full
+              lg:col-start-1
+              lg:row-start-2
+            "
+          >
             <div className="h-full rounded-xl bg-surface-container-lowest p-1 shadow-xl">
               <div
                 onDragEnter={(event) => {
@@ -441,7 +478,15 @@ export default function DashboardPage() {
           </section>
 
           {/* System Status card */}
-          <section className="order-4 mx-auto h-full w-full max-w-3xl lg:col-start-2 lg:row-start-2">
+          <section
+            className="
+              order-4
+              h-full
+              w-full
+              lg:col-start-2
+              lg:row-start-2
+            "
+          >
             <div
               className={`h-full min-h-[490px] rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-8 shadow-md transition-all duration-500 ${
                 !fileName ? "pointer-events-none opacity-60 grayscale" : ""
@@ -515,30 +560,23 @@ export default function DashboardPage() {
                   );
                 })}
               </div>
-
-              {completed && newInvoiceId && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    router.push(
-                      `/dashboard/invoices/${newInvoiceId}/validation`,
-                    );
-                  }}
-                  className="mt-8 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3.5 font-title-lg text-title-lg text-on-primary shadow-md transition-all hover:bg-primary/90 hover:shadow-lg"
-                >
-                  Review Extracted Invoice
-
-                  <span className="material-symbols-outlined text-[20px]">
-                    arrow_forward
-                  </span>
-                </button>
-              )}
             </div>
           </section>
 
           {/* Recent invoices */}
           {recent.length > 0 && (
-            <section className="order-5 mx-auto flex w-full max-w-3xl flex-col gap-3 lg:col-start-1 lg:row-start-3">
+            <section
+              className="
+                order-5
+                mx-auto
+                flex
+                w-full
+                flex-col
+                gap-3
+                lg:col-span-2
+                lg:row-start-3
+              "
+            >
               <div className="flex items-center justify-between px-1">
                 <h3 className="font-title-lg text-title-lg text-on-surface">
                   Recent Invoices
@@ -562,11 +600,12 @@ export default function DashboardPage() {
                     type="button"
                     onClick={() => {
                       const destination =
-                        invoice.processing_status === "Approval Pending" ||
-                        invoice.processing_status === "Approved" ||
+                        invoice.processing_status === "OCR Completed" ||
+                        invoice.processing_status === "Validation Completed" ||
+                        invoice.processing_status === "PO Completed" ||
                         invoice.processing_status === "Rejected"
-                          ? `/dashboard/invoices/${invoice.id}/approval`
-                          : `/dashboard/invoices/${invoice.id}/validation`;
+                            ? `/dashboard/invoices/${invoice.id}/approval`
+                            : `/dashboard/invoices/${invoice.id}/validation`;
 
                       router.push(destination);
                     }}
@@ -589,7 +628,7 @@ export default function DashboardPage() {
 
                       <span
                         className={`font-label-md text-label-md ${
-                          STATUS_LABEL[invoice.processing_status]
+                            STATUS_COLOR[invoice.processing_status]
                         }`}
                       >
                         {STATUS_LABEL[invoice.processing_status]}

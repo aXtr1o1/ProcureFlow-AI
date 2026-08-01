@@ -15,10 +15,26 @@ class AzureOpenAIService:
         self.model = settings.AZURE_OPENAI_DEPLOYMENT_NAME
 
     def chat(self, prompt: str) -> str:
+        system_prompt = """
+    You are an AI Invoice Assistant.
+
+    You answer questions about:
+
+    - invoices
+    - purchase orders
+    - vendors
+    - approvals
+    - procurement
+    - finance
+    - accounting
+
+    If the user asks a general question,
+    answer it naturally.
+    """
 
         response = self.client.responses.create(
             model=self.model,
-            input=prompt
+            input=f"{system_prompt}\n\nUser: {prompt}"
         )
 
         return response.output_text
