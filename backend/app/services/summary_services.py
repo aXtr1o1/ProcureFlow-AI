@@ -29,8 +29,17 @@ class SummaryService:
         if invoice is None:
             return None
 
+        line_items = "\n".join(
+            [
+                f"- {item.description}: Qty {item.quantity}, Amount {item.amount}"
+                for item in invoice.line_items
+            ]
+        )
+
         prompt = f"""
-        Generate a professional invoice summary.
+        You are an invoice analysis assistant.
+
+        Generate a professional summary.
 
         Invoice Number: {invoice.invoice_number}
         Vendor: {invoice.vendor_name}
@@ -39,9 +48,18 @@ class SummaryService:
         Currency: {invoice.currency}
         Subtotal: {invoice.subtotal}
         Tax: {invoice.tax}
-        Total Amount: {invoice.total_amount}
+        Total: {invoice.total_amount}
 
-        Provide a concise business summary in 3 to 5 sentences.
+        Line Items:
+        {line_items}
+
+        Generate:
+        1. Vendor overview
+        2. Invoice purpose
+        3. Financial summary
+        4. Important observations
+
+        Keep the response under 150 words.
         """
 
         openai_service = AzureOpenAIService()

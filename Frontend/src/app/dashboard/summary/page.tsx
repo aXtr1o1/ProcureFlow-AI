@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtDate, listInvoices, type Invoice } from "@/lib/invoices";
+import { useAuth } from "@/context/AuthContext";
+import { generateSummary } from "@/services/api";
 
 function startOfMonth() {
   const d = new Date();
@@ -20,31 +22,36 @@ function formatCompact(n: number) {
 
 export default function SummaryPage() {
   const router = useRouter();
+  const { loading, user } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [startDate, setStartDate] = useState(startOfMonth());
   const [endDate, setEndDate] = useState(today());
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState(false);
+
+  const [summary, setSummary] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
 
   useEffect(() => {
-    const loadInvoices = async () => {
-      try {
-        const all = await listInvoices();
-        console.log("First Invoice:", all[0]);
+  if (loading || !user) return;
 
-        console.log("Invoices:", all);
+  const loadInvoices = async () => {
+    try {
+      const all = await listInvoices();
 
-        setInvoices(all);
-        setSelected(new Set(all.map((i) => i.id)));
-      } catch (err) {
-        console.error(err);
-      }
-    };
+      console.log("First Invoice:", all[0]);
+      console.log("Invoices:", all);
 
-    loadInvoices();
-  }, []);
+      setInvoices(all);
+      setSelected(new Set(all.map((i) => i.id)));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  loadInvoices();
+}, [loading, user]);
 
   const inRange = useMemo(() => {
     const start = new Date(startDate).getTime();
@@ -88,14 +95,38 @@ export default function SummaryPage() {
       : ""
   }`;
 
-  const handleGenerate = () => {
-    setGenerating(true);
-    setGenerated(false);
-    setTimeout(() => {
-      setGenerating(false);
-      setGenerated(true);
-    }, 1000);
-  };
+  const handleGenerate = async () => {
+
+    if (selected.size === 0) {
+        alert("Please select an invoice.");
+        return;
+    }
+
+    try {
+
+        setGenerating(true);
+
+        const invoiceId = [...selected][0];
+
+        const response = await generateSummary(invoiceId);
+
+        console.log(response);
+
+        setSummary(response.summary);
+
+        setGenerated(true);
+
+    } catch (err: any) {
+
+        alert(err.message);
+
+    } finally {
+
+        setGenerating(false);
+
+    }
+
+};
 
   const toggleSelected = (id: number) => {
     setSelected((prev) => {
@@ -193,10 +224,10 @@ export default function SummaryPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 flex flex-col gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <div className="lg:col-span-8 flex flex-col gap-8">
             {/* Period overview */}
-            <div className="bg-white rounded-xl shadow-md p-6">
+            <div className="bg-white rounded-xl shadow-md p-6 h-full">
               <div className="flex items-center gap-2 mb-6">
                 <div className="w-1 h-6 bg-primary rounded-full" />
                 <h2 className="font-title-lg text-title-lg text-on-surface">
@@ -302,7 +333,7 @@ export default function SummaryPage() {
                     AI-Generated Insights
                   </h3>
                   <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">
-                    {insightText}
+                    {summary || insightText}
                   </p>
                 </div>
               </div>
@@ -332,7 +363,7 @@ export default function SummaryPage() {
           </div>
 
           {/* Included invoices */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-4 h-full">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-title-lg text-title-lg text-on-surface">
                 Included Invoices
@@ -341,7 +372,7 @@ export default function SummaryPage() {
                 {selected.size} Selected
               </span>
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 min-h-[520px]">
               {inRange.slice(0, 8).map((inv) => {
                 const isSelected = selected.has(inv.id);
                 return (

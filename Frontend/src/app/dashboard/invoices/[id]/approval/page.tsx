@@ -28,12 +28,25 @@ interface Invoice {
   total_amount: number;
   currency: string;
   processing_status: string;
+  blob_name: string;
+  blob_url: string;
   status_logs: ApprovalHistory[];
 }
 
 export default function InvoiceApprovalPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const API_URL =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  const handleDownload = () => {
+    if (!invoice?.blob_name) return;
+
+    window.open(
+      `${API_URL}/invoices/${encodeURIComponent(invoice.blob_name)}`,
+      "_blank"
+    );
+  };
   const [invoice, setInvoice] = useState<Invoice | null | undefined>(undefined);
   const [deciding, setDeciding] = useState<"approved" | "rejected" | null>(null);
   const [history, setHistory] = useState<ApprovalHistory[]>([]);
@@ -128,7 +141,11 @@ export default function InvoiceApprovalPage() {
   };
 
 
-  const isDecided = invoice.processing_status === "Approved" || invoice.processing_status === "Rejected";
+  const isDecided = [
+      "Approved",
+      "Rejected",
+      "PO Completed",
+  ].includes(invoice.processing_status);
 
   return (
     <main className="relative w-full bg-surface min-h-[calc(100vh-80px)] px-lg">
@@ -150,13 +167,17 @@ export default function InvoiceApprovalPage() {
             <span className="font-label-sm text-label-sm text-primary uppercase tracking-widest">
               {isDecided ? "Resolved" : "Action Required"}
             </span>
-            <h1 className="font-headline-lg-mobile text-headline-lg-mobile text-on-surface">
-              {invoice.processing_status === "Approved"
-                ? "Approved"
-                : invoice.processing_status === "Rejected"
-                ? "Rejected"
-                : "Approval Requested"}
-            </h1>
+            <h1>
+              {
+              invoice.processing_status === "Rejected"
+                  ? "Rejected"
+                  : invoice.processing_status === "Approved"
+                  ? "Approved"
+                  : invoice.processing_status === "PO Completed"
+                  ? "PO Completed"
+                  : "Approval Requested"
+              }
+              </h1>
           </div>
         </div>
 
@@ -285,7 +306,17 @@ export default function InvoiceApprovalPage() {
               <span className="material-symbols-outlined">
                 {invoice.processing_status === "Approved" ? "check_circle" : "cancel"}
               </span>
-              {invoice.processing_status === "Approved" ? "Approved" : "Rejected"}
+              {
+                invoice.processing_status === "Rejected"
+                ?
+                "Rejected"
+                :
+                invoice.processing_status === "PO Completed"
+                ?
+                "PO Completed"
+                :
+                "Approved"
+                }
             </div>
           ) : (
             <div className="flex gap-md">
@@ -318,14 +349,28 @@ export default function InvoiceApprovalPage() {
             </div>
           )}
           {isDecided && (
-            <button
-              type="button"
-              onClick={() => router.push("/dashboard")}
-              className="w-full py-2 text-on-surface-variant font-label-md hover:text-primary transition-colors"
-            >
-              Back to Dashboard
-            </button>
-          )}
+              <>
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  className="w-full h-12 rounded-xl bg-primary text-white font-title-md flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined">
+                    download
+                  </span>
+
+                  Download Invoice
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => router.back()}
+                  className="w-full py-2 text-on-surface-variant hover:text-primary"
+                >
+                  Back
+                </button>
+              </>
+            )}
         </div>
       </div>
     </main>

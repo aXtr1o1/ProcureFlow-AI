@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/invoices";
 import { getInvoice } from "@/services/api";
@@ -28,9 +28,9 @@ interface Invoice {
   vendor_address: string;
   customer_name: string;
   invoice_date: string;
+  currency: string;
   due_date: string;
   purchase_order_number: string | null;
-  currency: string;
   subtotal: number;
   tax: number;
   total_amount: number;
@@ -81,15 +81,6 @@ export default function InvoiceDetailsPage() {
 
 }, [params.id]);
 
-  const subtotal = useMemo(() => {
-  if (!invoice) return 0;
-
-  return invoice.line_items.reduce(
-    (sum, item) => sum + item.amount,
-    0
-  );
-}, [invoice]);
-
   if (invoice === undefined) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-surface">
@@ -117,6 +108,11 @@ export default function InvoiceDetailsPage() {
   const isOverdue =
     invoice.due_date &&
     new Date(invoice.due_date).getTime() < Date.now();
+
+  const securityDeposit =
+    invoice.line_items.find((item) =>
+      item.description.toLowerCase().includes("deposit")
+    )?.amount ?? 0;
 
   const handleExportJson = () => {
     setExportState("working");
@@ -226,7 +222,7 @@ export default function InvoiceDetailsPage() {
                   Total Amount
                 </p>
                 <p className="font-headline-lg text-headline-lg text-on-surface">
-                  ${invoice.total_amount.toFixed(2)}
+                  {invoice.currency} {invoice.total_amount.toFixed(2)}
                 </p>
               </div>
             </div>
@@ -297,19 +293,59 @@ export default function InvoiceDetailsPage() {
                         {item.quantity}
                       </td>
                       <td className="px-4 py-3 text-right font-body-md text-body-md text-on-surface font-semibold">
-                        ${(item.amount).toFixed(2)}
+                        {invoice.currency} {item.amount.toFixed(2)}
                       </td>
                     </tr>
                   ))}
                   <tr>
                     <td
+                      className="px-4 py-3 font-medium text-on-surface"
+                      colSpan={2}
+                    >
+                      Subtotal (Rent + Charges)
+                    </td>
+
+                    <td className="px-4 py-3 text-right">
+                      {invoice.currency} {invoice.subtotal.toFixed(2)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td
+                      className="px-4 py-3 font-medium text-on-surface"
+                      colSpan={2}
+                    >
+                      Security Deposit
+                    </td>
+
+                    <td className="px-4 py-3 text-right">
+                      {invoice.currency} {securityDeposit.toFixed(2)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td
+                      className="px-4 py-3 font-medium text-on-surface"
+                      colSpan={2}
+                    >
+                      VAT (5%)
+                    </td>
+
+                    <td className="px-4 py-3 text-right">
+                      {invoice.currency} {invoice.tax.toFixed(2)}
+                    </td>
+                  </tr>
+
+                  <tr className="border-t">
+                    <td
                       className="px-4 py-3 font-title-md text-title-md text-on-surface"
                       colSpan={2}
                     >
-                      Total
+                      Grand Total
                     </td>
+
                     <td className="px-4 py-3 text-right font-title-md text-title-md text-on-surface">
-                      ${subtotal.toFixed(2)}
+                      {invoice.currency} {invoice.total_amount.toFixed(2)}
                     </td>
                   </tr>
                 </tbody>
@@ -342,7 +378,9 @@ export default function InvoiceDetailsPage() {
                 </p>
               </div>
             ))}
-            {invoice.processing_status !== "approved" && invoice.processing_status !== "rejected" && (
+            {invoice.processing_status !== "Approved" &&
+             invoice.processing_status !== "Rejected" &&
+             invoice.processing_status !== "PO Generated" && (
               <div className="relative pl-9">
                 <div className="absolute left-0 top-0.5 w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center z-10">
                   <div className="w-2 h-2 rounded-full bg-primary" />
@@ -366,18 +404,23 @@ export default function InvoiceDetailsPage() {
                 router.push(
                   invoice.processing_status === "Approval Pending" ||
                   invoice.processing_status === "Approved" ||
-                  invoice.processing_status === "Rejected"
-                    ? `/dashboard/invoices/${invoice.id}/approval`
-                    : `/dashboard/invoices/${invoice.id}/validation`
-                )
+                  invoice.processing_status === "Rejected" ||
+                  invoice.processing_status === "PO Generated"
+                      ? `/dashboard/invoices/${invoice.id}/approval`
+                      : `/dashboard/invoices/${invoice.id}/validation`
+              )
               }
               className="w-full py-2.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md shadow-sm hover:shadow-md transition-all"
             >
-              {invoice.processing_status === "Approval Pending"
-                ? "Go to Approval"
-                : invoice.processing_status === "Approved" || invoice.processing_status === "Rejected"
-                ? "View Approval Record"
-                : "Go to Validation"}
+              {
+                invoice.processing_status === "Approval Pending"
+                  ? "Go to Approval"
+                  : invoice.processing_status === "Approved" ||
+                    invoice.processing_status === "Rejected" ||
+                    invoice.processing_status === "PO Generated"
+                  ? "View Approval Record"
+                  : "Go to Validation"
+              }
             </button>
           </div>
         </div>

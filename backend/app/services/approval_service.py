@@ -60,7 +60,7 @@ class ApprovalService:
         status_log = InvoiceStatusLog(
             invoice_id=invoice.id,
             status="Approved",
-            remarks="Invoice approved.",
+            remarks="Invoice approved successfully.",
             updated_by=approved_by
         )
 
@@ -84,11 +84,12 @@ class ApprovalService:
             self.purchase_order_service.generate_purchase_order(
                 invoice.id
             )
+            invoice.processing_status = "PO Completed"
 
         status_log = InvoiceStatusLog(
             invoice_id=invoice.id,
-            status="PO Generated",
-            remarks="Purchase Order generated.",
+            status="PO Completed",
+            remarks="Purchase Order generated successfully.",
             updated_by=approved_by
         )
 
@@ -167,7 +168,7 @@ class ApprovalService:
         invoice_id: int
     ):
 
-        return (
+        history = (
             self.db.query(ApprovalHistory)
             .filter(
                 ApprovalHistory.invoice_id == invoice_id
@@ -177,3 +178,7 @@ class ApprovalService:
             )
             .all()
         )
+
+        print("History Count:", len(history))
+
+        return history

@@ -32,7 +32,7 @@ def search_documents(
     service = AzureSearchService(db)
 
     try:
-        results = service.search(query)
+        results = service.search(query) or []
 
     except Exception as e:
         raise HTTPException(

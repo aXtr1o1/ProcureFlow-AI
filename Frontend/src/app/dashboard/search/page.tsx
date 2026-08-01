@@ -56,7 +56,9 @@ const DEFAULT_RECENT = [
 export default function InvoiceSearchPage() {
   const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [results, setResults] = useState<Invoice[]>([]);
   const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
   const [activeChip, setActiveChip] = useState<ChipFilter>("all");
   const [recent, setRecent] = useState<string[]>(DEFAULT_RECENT);
 
@@ -74,90 +76,35 @@ export default function InvoiceSearchPage() {
 
     loadInvoices();
 }, []);
-
-  // const results = useMemo(() => {
-  //   const q = query
-  //     .trim()
-  //     .toLowerCase()
-  //     .replace("amount due", "")
-  //     .replace("$", "")
-  //     .trim();
-  //     console.log("Query:", q);
-  //     console.table(
-  //       invoices.map(i => ({
-  //         vendor: i.vendor_name,
-  //         invoice: i.invoice_number,
-  //         amount: i.total_amount
-  //       }))
-  //     );
-  //   const thirtyDaysAgo = Date.now() - 1000 * 60 * 60 * 24 * 30;
-
-  //   return invoices.filter((inv) => {
-  //     const amount = inv.total_amount.toFixed(2);
-
-  //     const matchesQuery =
-  //       !q ||
-  //       inv.vendor_name
-  //       ?.replace(/\s+/g, " ")
-  //       .trim()
-  //       .toLowerCase()
-  //       .includes(q) ||
-  //       inv.invoice_number.toLowerCase().includes(q) ||
-  //       inv.processing_status.toLowerCase().includes(q) ||
-  //       fmtDate(inv.invoice_date).toLowerCase().includes(q) ||
-  //       amount.includes(q.replace("$", ""));
-
-  //     if (!matchesQuery) return false;
-
-  //     switch (activeChip) {
-  //       case "pending_approval":
-  //         return inv.processing_status === "Pending Validation";
-  //       case "last_30":
-  //         return new Date(inv.created_at).getTime() >= thirtyDaysAgo;
-  //       case "high_value":
-  //         return inv.total_amount >= 1000;
-  //       default:
-  //         return true;
-  //     }
-  //   });
-  // }, [invoices, query, activeChip]);
-  const [results, setResults] = useState<Invoice[]>([]);
-
-  const runSearch = (term: string) => {
-    setQuery(term);
-    if (term.trim() && !recent.includes(term.trim())) {
-      setRecent((prev) => [term.trim(), ...prev].slice(0, 5));
-    }
-  };
-
   const searchInvoices = async (term: string) => {
-      try {
 
-          let response;
+    if (!term.trim() || loading) return;
 
-          if (/^RP-INV/i.test(term.trim())) {
+    setLoading(true);
 
-              response = await searchInvoiceByNumber(term);
+    try {
 
-          } else {
+        let response;
 
-              response = await searchInvoice(term);
+        if (/^RP-INV/i.test(term.trim())) {
+            response = await searchInvoiceByNumber(term);
+        } else {
+            response = await searchInvoice(term);
+        }
 
-          }
+        setResults(response.results ?? []);
 
-setResults(response.results);
-          console.log(response.results);
+        if (!recent.includes(term.trim())) {
+            setRecent((prev) => [term.trim(), ...prev].slice(0, 5));
+        }
 
-          setResults(response.results);
-
-          if (term.trim() && !recent.includes(term.trim())) {
-              setRecent((prev) => [term.trim(), ...prev].slice(0, 5));
-          }
-
-      } catch (err) {
-          console.error(err);
-      }
-  };
+    } catch (err) {
+        console.error(err);
+        setResults([]);
+    } finally {
+        setLoading(false);
+    }
+};
 
   const handleDownload = (inv: Invoice) => {
     const blob = new Blob([JSON.stringify(inv, null, 2)], {
@@ -199,10 +146,11 @@ setResults(response.results);
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                            searchInvoices(query);
-                        }
-                    }}
+                      if (e.key === "Enter" && !loading) {
+                          e.preventDefault();
+                          searchInvoices(query);
+                      }
+                  }}
                     className="w-full h-14 pl-12 pr-4 rounded-xl bg-surface-container-lowest shadow-sm font-body-md text-on-surface"
                     placeholder="Try 'Invoices from Northwind over $1k'..."
                     type="text"
@@ -211,10 +159,11 @@ setResults(response.results);
             </div>
 
             <button
+                disabled={loading}
                 onClick={() => searchInvoices(query)}
-                className="px-6 rounded-xl bg-primary text-white hover:bg-primary/90"
+                className="px-6 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                Search
+                {loading ? "Searching..." : "Search"}
             </button>
 
         </div>

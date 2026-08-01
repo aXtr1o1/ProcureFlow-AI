@@ -10,6 +10,7 @@ interface Invoice {
   invoice_number: string;
   vendor_name: string;
   invoice_date: string;
+  currency: string;
   total_amount: number;
   processing_status: string;
   blob_name: string;
@@ -126,7 +127,7 @@ export default function InvoicesListPage() {
               </button>
               <div className="flex items-center gap-4 shrink-0">
                 <span className="font-title-lg text-title-lg text-on-surface">
-                  ${inv.total_amount.toFixed(2)}
+                  {inv.currency} {inv.total_amount.toFixed(2)}
                 </span>
                 <span
                   className={`font-label-md text-label-md px-3 py-1.5 rounded-full ${

@@ -1,10 +1,18 @@
+import os
 import uuid
+import io
+
+from fastapi.responses import StreamingResponse
+
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.blob_storage_service import BlobStorageService
 from app.services.document_intelligence_service import DocumentIntelligenceService
 from sqlalchemy.orm import Session
 from fastapi import Depends
 from app.database.database import get_db
+
+from app.core.security import get_current_user
+from app.database.models import User
 
 from pydantic import BaseModel
 
@@ -69,11 +77,14 @@ async def upload_invoice(file: UploadFile = File(...)):
 # ==========================================================
 @router.get("/")
 async def get_all_invoices(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     invoice_service = InvoiceService(db)
 
-    invoices = invoice_service.get_all_invoices()
+    invoices = invoice_service.get_all_invoices(
+        current_user.id
+    )
 
     data = []
 
@@ -83,6 +94,7 @@ async def get_all_invoices(
             "invoice_number": invoice.invoice_number,
             "vendor_name": invoice.vendor_name,
             "invoice_date": invoice.invoice_date,
+            "currency": invoice.currency,
             "total_amount": invoice.total_amount,
             "processing_status": invoice.processing_status,
             "blob_name": invoice.blob_name,
@@ -101,11 +113,15 @@ async def get_all_invoices(
 @router.get("/details/{invoice_id}")
 async def get_invoice_details(
     invoice_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     invoice_service = InvoiceService(db)
 
-    invoice = invoice_service.get_invoice_by_id(invoice_id)
+    invoice = invoice_service.get_invoice_by_id(
+        invoice_id,
+        current_user.id
+    )
 
     if not invoice:
         raise HTTPException(
@@ -156,6 +172,7 @@ async def get_invoice_details(
             ]
         }
     }
+    
 
 # ==========================================================
 # Download Invoice
@@ -170,11 +187,15 @@ async def download_invoice(blob_name: str):
 
         data = blob_service.download_invoice(blob_name)
 
-        return {
-            "success": True,
-            "message": "Invoice downloaded successfully.",
-            "size_in_bytes": len(data)
-        }
+        filename = os.path.basename(blob_name)
+
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
 
     except Exception as e:
 
@@ -182,7 +203,6 @@ async def download_invoice(blob_name: str):
             status_code=500,
             detail=str(e)
         )
-
 
 # ==========================================================
 # Delete Invoice
@@ -214,35 +234,80 @@ async def delete_invoice(blob_name: str):
 # Update Invoice Status (Placeholder)
 # ==========================================================
 @router.put("/{invoice_id}/status")
-async def update_invoice_status(invoice_id: str):
-    """
-    Update invoice processing status.
-    """
+async def update_invoice_status(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+
+    invoice_service = InvoiceService(db)
+
+    invoice = invoice_service.get_invoice_by_id(
+        invoice_id,
+        current_user.id
+    )
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Invoice not found."
+        )
+
+    invoice.processing_status = "Approval Pending"
+
+    invoice_service.save_status_log(
+        invoice=invoice,
+        status="Approval Pending",
+        remarks="Invoice processing completed."
+    )
+
+    db.commit()
+    db.refresh(invoice)
 
     return {
-        "message": f"Update invoice status for '{invoice_id}' endpoint is ready."
+        "success": True,
+        "status": invoice.processing_status
     }
 
 @router.post("/analyze")
 async def analyze_invoice(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     try:
+
+        # Validate uploaded file
+        if (
+            file.content_type != "application/pdf"
+            or not file.filename.lower().endswith(".pdf")
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Only PDF invoice files are allowed."
+            )
         # Generate one document ID
         document_id = str(uuid.uuid4())
 
-        # Upload invoice to Blob Storage
-        upload_result = await blob_service.upload_invoice(
-            document_id=document_id,
-            file=file
-        )
-
-        # Reset file pointer because upload_invoice() has already read the file
-        await file.seek(0)
-
-        # Read file again for Document Intelligence
+        # Read uploaded PDF
         file_bytes = await file.read()
+
+        # Analyze using Azure
+        result = document_service.analyze_invoice(file_bytes)
+
+        required_fields = [
+            "invoice_number",
+            "vendor_name",
+            "invoice_date",
+            "total_amount"
+        ]
+
+        for field in required_fields:
+            if not result.get(field):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invalid invoice. Missing {field}."
+                )
 
         # Analyze the invoice
         result = document_service.analyze_invoice(file_bytes)
@@ -273,6 +338,19 @@ async def analyze_invoice(
                 detail=validation_result["errors"]
             )
 
+        # Reset the file pointer before uploading
+        await file.seek(0)
+
+        upload_result = await blob_service.upload_invoice(
+            document_id=document_id,
+            file=file
+        )
+
+        ocr_blob = blob_service.upload_ocr_data(
+            document_id=document_id,
+            extracted_fields=result
+        )
+
         # Continue with saving
         invoice_service = InvoiceService(db)
 
@@ -289,6 +367,7 @@ async def analyze_invoice(
 
 
         invoice = invoice_service.save_invoice(
+            user_id=current_user.id,
             invoice_data=result,
             blob_name=upload_result["blob_name"],
             blob_url=upload_result["blob_url"],
@@ -300,11 +379,16 @@ async def analyze_invoice(
             line_items=result["line_items"]
         )
 
+        invoice.processing_status = "OCR Completed"
+
         invoice_service.save_status_log(
             invoice=invoice,
-            status="Uploaded",
-            remarks="Invoice uploaded successfully."
+            status="OCR Completed",
+            remarks="OCR extraction completed successfully."
         )
+
+        db.commit()
+        db.refresh(invoice)
 
         # Add Blob Storage details to the response
         result["blob_name"] = upload_result["blob_name"]
@@ -312,7 +396,11 @@ async def analyze_invoice(
 
         return {
             "success": True,
-            "invoice": result
+            "invoice_id": invoice.id,
+            "processing_status": invoice.processing_status,
+            "invoice": {
+                **result
+            }
         }
 
     except HTTPException:

@@ -3,7 +3,6 @@
 import { useEffect, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import GoogleIcon from "@/components/GoogleIcon";
 
 type View = "login" | "signupSelection" | "signupCredentials";
 
@@ -20,7 +19,7 @@ const TITLES: Record<View, { title: string; subtitle: string }> = {
 };
 
 export default function LoginPage() {
-  const { user, loading, signIn, signUp, signInWithGoogle } = useAuth();
+  const { user, loading, signIn, signUp } = useAuth();
   const router = useRouter();
   const [view, setView] = useState<View>("login");
 
@@ -72,13 +71,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleGoogle = async () => {
-    setSubmitting(true);
-    await signInWithGoogle();
-    setSubmitting(false);
-    router.replace("/dashboard");
-  };
-
   const { title, subtitle } = TITLES[view];
 
   return (
@@ -104,25 +96,6 @@ export default function LoginPage() {
             <div className="w-full max-w-md mx-auto">
               <div className="bg-surface-container-lowest/80 backdrop-blur-xl rounded-xl p-8 shadow-xl border border-white/40">
                 <form className="space-y-6" onSubmit={handleSignIn}>
-                  <button
-                    type="button"
-                    onClick={handleGoogle}
-                    disabled={submitting}
-                    className="w-full py-3.5 flex items-center justify-center gap-3 bg-white border border-outline-variant rounded-lg hover:bg-surface-container-low transition-all shadow-sm group disabled:opacity-60"
-                  >
-                    <GoogleIcon />
-                    <span className="font-title-lg text-body-lg font-semibold text-on-surface">
-                      Sign in with Google
-                    </span>
-                  </button>
-
-                  <div className="my-5 flex items-center gap-4">
-                    <div className="h-px flex-1 bg-outline-variant" />
-                    <span className="font-label-md text-label-md text-outline uppercase whitespace-nowrap">
-                      or sign in with email
-                    </span>
-                    <div className="h-px flex-1 bg-outline-variant" />
-                  </div>
 
                   <div className="space-y-2">
                     <label
@@ -242,58 +215,50 @@ export default function LoginPage() {
           )}
 
           {view === "signupSelection" && (
-            <div className="w-full">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-                <button
-                  type="button"
-                  onClick={handleGoogle}
-                  disabled={submitting}
-                  className="flex flex-col items-center justify-center p-10 bg-surface-container-lowest border border-white/40 shadow-xl rounded-xl hover:scale-[1.02] transition-all group disabled:opacity-60"
-                >
-                  <div className="w-16 h-16 mb-6 bg-surface-container flex items-center justify-center rounded-full">
-                    <GoogleIcon className="w-8 h-8" />
-                  </div>
-                  <h3 className="font-headline-md text-headline-md mb-2">
-                    Google Account
-                  </h3>
-                  <p className="font-body-md text-on-surface-variant text-center">
-                    Fastest way to join with your work email.
-                  </p>
-                </button>
+            <div className="w-full flex flex-col items-center">
 
+              <div className="w-full max-w-md">
                 <button
                   type="button"
                   onClick={() => {
                     setError(null);
                     setView("signupCredentials");
                   }}
-                  className="flex flex-col items-center justify-center p-10 bg-surface-container-lowest border border-white/40 shadow-xl rounded-xl hover:scale-[1.02] transition-all group"
+                  className="w-full flex flex-col items-center justify-center p-10 bg-surface-container-lowest border border-white/40 shadow-xl rounded-xl hover:scale-[1.02] transition-all group"
                 >
                   <div className="w-16 h-16 mb-6 bg-primary/10 text-primary flex items-center justify-center rounded-full">
                     <span className="material-symbols-outlined text-4xl">
                       person_add
                     </span>
                   </div>
+
                   <h3 className="font-headline-md text-headline-md mb-2">
                     Direct Sign Up
                   </h3>
+
                   <p className="font-body-md text-on-surface-variant text-center">
                     Use a unique username and password.
                   </p>
                 </button>
+
+                <div className="mt-8 text-center">
+                  <button
+                    type="button"
+                    className="font-label-md text-primary hover:underline uppercase tracking-widest inline-flex items-center gap-2"
+                    onClick={() => {
+                      setError(null);
+                      setView("login");
+                    }}
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      arrow_back
+                    </span>
+
+                    Back to Login
+                  </button>
+                </div>
               </div>
-              <div className="mt-10 text-center">
-                <button
-                  type="button"
-                  className="font-label-md text-primary hover:underline uppercase tracking-widest flex items-center justify-center gap-2 mx-auto"
-                  onClick={() => setView("login")}
-                >
-                  <span className="material-symbols-outlined text-sm">
-                    arrow_back
-                  </span>{" "}
-                  Back to Login
-                </button>
-              </div>
+
             </div>
           )}
 

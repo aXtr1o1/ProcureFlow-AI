@@ -24,6 +24,7 @@ export async function login(username: string, password: string) {
   const data = await response.json();
 
   console.log("Response Data:", data);
+  console.log("LOGIN RESPONSE:", data);
 
   if (!response.ok) {
     throw new Error(data.detail);
@@ -35,11 +36,16 @@ export async function login(username: string, password: string) {
 export async function getCurrentUser() {
     const token = localStorage.getItem("access_token");
 
+    console.log("TOKEN USED:", token);
+    console.log("API URL:", API_URL);
+
     const response = await fetch(`${API_URL}/auth/me`, {
         headers: {
             Authorization: `Bearer ${token}`,
         },
     });
+
+    console.log("Token sent to /auth/me:", token);
 
     const data = await response.json();
 
@@ -108,31 +114,54 @@ export async function getInvoices() {
     },
   });
 
+  const data = await response.json();
+
+  console.log("Status:", response.status);
+  console.log("Response:", data);
+
   if (!response.ok) {
-    throw new Error("Failed to fetch invoices");
+    throw new Error(data.detail || "Failed to fetch invoices");
   }
 
-  return await response.json();
+  return data;
 }
 
 export async function getInvoice(id: number | string) {
 
-    const token = localStorage.getItem("access_token");
-
-    const response = await fetch(
-        `${API_URL}/invoices/details/${id}`,
-        {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        }
-    );
-
-    if (!response.ok) {
-        throw new Error("Failed to fetch invoice");
+    if (!id) {
+        throw new Error("Invoice ID is missing");
     }
 
-    return await response.json();
+    const token = localStorage.getItem("access_token");
+
+    try {
+
+        const response = await fetch(
+            `${API_URL}/invoices/details/${id}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            }
+        );
+
+        const data = await response.json();
+
+        console.log("Invoice Response:", response.status);
+        console.log(data);
+
+        if (!response.ok) {
+            throw new Error(data.detail || "Failed to fetch invoice");
+        }
+
+        return data;
+
+    } catch (err) {
+
+        console.error("getInvoice Error:", err);
+
+        throw err;
+    }
 }
 
 export async function getApprovalDetails(id: number | string) {
@@ -263,6 +292,52 @@ export async function searchInvoiceByNumber(invoiceNumber: string) {
     const response = await fetch(
         `${API_URL}/search/invoice/${encodeURIComponent(invoiceNumber)}`,
         {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.detail);
+    }
+
+    return data;
+}
+
+export async function updateInvoiceStatus(
+    id: number | string
+) {
+    const token = localStorage.getItem("access_token");
+
+    const response = await fetch(
+        `${API_URL}/invoices/${id}/status`,
+        {
+            method: "PUT",
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.detail);
+    }
+
+    return data;
+}
+
+export async function generateSummary(invoiceId: number) {
+    const token = localStorage.getItem("access_token");
+
+    const response = await fetch(
+        `${API_URL}/summary/generate/${invoiceId}`,
+        {
+            method: "POST",
             headers: {
                 Authorization: `Bearer ${token}`,
             },
