@@ -21,7 +21,7 @@ type Step = {
   description: string;
 };
 
-const STATUS_TO_STEP = {
+const STATUS_TO_STEP: Record<string, number> = {
     Uploaded: 0,
     "AI Processing": 1,
     "OCR Extraction": 2,
@@ -93,7 +93,7 @@ export default function DashboardPage() {
 
   const updateSystemStatus = (status: string) => {
 
-    const currentStep = STATUS_TO_STEP[status] ?? 0;
+  const currentStep = STATUS_TO_STEP[status] ?? 0;
 
     setStepStates(
       STEPS.map((_, index) => {
