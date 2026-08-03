@@ -64,7 +64,8 @@ def approve_invoice(
     invoice = service.approve_invoice(
         invoice_id=invoice_id,
         approved_by=request.approved_by,
-        user_id=current_user.id
+        user_id=current_user.id,
+        invoice_edits=request.invoice_edits,
     )
 
     if invoice is None:

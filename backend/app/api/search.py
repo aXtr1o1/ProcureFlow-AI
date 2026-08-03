@@ -1,19 +1,62 @@
-import json
+from typing import Any, Dict, List
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
-from app.services.azure_search_service import AzureSearchService
+from app.services.invoice_service import InvoiceService
 from app.schemas.search_schema import SearchResponse
 
 router = APIRouter(
     prefix="/search",
-    tags=["Azure AI Search"]
+    tags=["Invoice Search"]
 )
 
 
+def _serialize_db_invoice(invoice, line_items) -> Dict[str, Any]:
+    return {
+        "id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "vendor_name": (invoice.vendor_name or "").replace("\n", " ").strip(),
+        "vendor_address": invoice.vendor_address,
+        "customer_name": invoice.customer_name,
+        "invoice_date": invoice.invoice_date,
+        "due_date": invoice.due_date,
+        "purchase_order_number": invoice.purchase_order_number or None,
+        "currency": invoice.currency,
+        "subtotal": invoice.subtotal,
+        "tax": invoice.tax,
+        "total_amount": invoice.total_amount,
+        "processing_status": invoice.processing_status,
+        "blob_name": invoice.blob_name,
+        "blob_url": invoice.blob_url,
+        "line_items": [
+            {
+                "id": item.id,
+                "description": item.description,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "amount": item.amount,
+            }
+            for item in line_items
+        ],
+        "source": "sqlite",
+    }
+
+
+def _format_invoices(db: Session, invoices: List) -> List[Dict[str, Any]]:
+    invoice_service = InvoiceService(db)
+    results = []
+
+    for invoice in invoices:
+        line_items = invoice_service.get_invoice_line_items(invoice.id)
+        results.append(_serialize_db_invoice(invoice, line_items))
+
+    return results
+
+
 # ==========================================================
-# Search Documents
+# Search Documents (SQLite)
 # ==========================================================
 @router.get(
     "/",
@@ -25,59 +68,18 @@ def search_documents(
     db: Session = Depends(get_db)
 ):
     """
-    Search invoices, OCR text, summaries and purchase orders
-    using Azure AI Search.
+    Search invoices stored in the SQLite database.
     """
-
-    service = AzureSearchService(db)
-
-    try:
-        results = service.search(query) or []
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
-
-    formatted_results = []
-
-    for item in results:
-        try:
-            invoice = json.loads(item["content"])
-
-            # Skip non-invoice documents
-            if not invoice.get("invoice_number"):
-                continue
-
-            formatted_results.append({
-                "id": item.get("id"),
-                "invoice_number": invoice.get("invoice_number"),
-                "vendor_name": invoice.get("vendor_name"),
-                "invoice_date": invoice.get("invoice_date"),
-                "total_amount": invoice.get("total_amount"),
-                "processing_status": invoice.get("processing_status", "Uploaded"),
-                "blob_name": invoice.get("blob_name"),
-                "blob_url": invoice.get("blob_url"),
-            })
-
-        except Exception:
-            continue
-
-
-    # Remove duplicate invoices
-    unique_results = {}
-
-    for invoice in formatted_results:
-        unique_results[invoice["invoice_number"]] = invoice
-
-    formatted_results = list(unique_results.values())
+    invoice_service = InvoiceService(db)
+    invoices = invoice_service.search_invoices(query)
+    formatted_results = _format_invoices(db, invoices)
 
     return SearchResponse(
         query=query,
         total_results=len(formatted_results),
         results=formatted_results
     )
+
 
 # ==========================================================
 # Search by Invoice Number
@@ -90,59 +92,16 @@ def search_invoice(
     invoice_number: str,
     db: Session = Depends(get_db)
 ):
-    service = AzureSearchService(db)
-
-    try:
-        results = service.search_by_invoice_number(invoice_number)
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
-
-    formatted_results = []
-
-    for item in results:
-
-        try:
-
-            invoice = json.loads(item["content"])
-
-            if not invoice.get("invoice_number"):
-                continue
-
-            formatted_results.append({
-
-                "id": item.get("id"),
-
-                "invoice_number": invoice.get("invoice_number"),
-
-                "vendor_name": invoice.get("vendor_name"),
-
-                "invoice_date": invoice.get("invoice_date"),
-
-                "total_amount": invoice.get("total_amount"),
-
-                "processing_status": invoice.get(
-                    "processing_status",
-                    "Uploaded"
-                ),
-
-                "blob_name": invoice.get("blob_name"),
-
-                "blob_url": invoice.get("blob_url")
-
-            })
-
-        except Exception:
-            continue
+    invoice_service = InvoiceService(db)
+    invoices = invoice_service.search_invoices_by_number(invoice_number)
+    formatted_results = _format_invoices(db, invoices)
 
     return SearchResponse(
         query=invoice_number,
         total_results=len(formatted_results),
         results=formatted_results
     )
+
 
 # ==========================================================
 # Search by Vendor
@@ -155,13 +114,11 @@ def search_vendor(
     vendor_name: str,
     db: Session = Depends(get_db)
 ):
-    service = AzureSearchService(db)
+    invoice_service = InvoiceService(db)
+    invoices = invoice_service.search_invoices_by_vendor(vendor_name)
+    formatted_results = _format_invoices(db, invoices)
 
-    results = service.search_by_vendor(
-        vendor_name
-    )
-
-    if not results:
+    if not formatted_results:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Vendor not found."
@@ -169,6 +126,6 @@ def search_vendor(
 
     return SearchResponse(
         query=vendor_name,
-        total_results=len(results),
-        results=results
+        total_results=len(formatted_results),
+        results=formatted_results
     )

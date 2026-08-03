@@ -2,123 +2,46 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getInvoices } from "@/services/api";
 import {
-    analyzeInvoice,
-    getInvoices,
-    getInvoice,
-} from "@/services/api";
-
-import {
-    fmtDate,
-    type Invoice,
-} from "@/lib/invoices";
-
-type StepState = "pending" | "active" | "done";
-
-type Step = {
-  id: number;
-  title: string;
-  description: string;
-};
-
-const STATUS_TO_STEP: Record<string, number> = {
-    Uploaded: 0,
-    "AI Processing": 1,
-    "OCR Extraction": 2,
-    "OCR Completed": 3,
-    "Validation Completed": 3,
-    "PO Completed": 3,
-    Rejected: 3,
-};
-
-const STEPS: Step[] = [
-  {
-    id: 1,
-    title: "Invoice Uploaded",
-    description: "File ready for analysis",
-  },
-  {
-    id: 2,
-    title: "AI Processing",
-    description: "Identifying document structure",
-  },
-  {
-    id: 3,
-    title: "OCR Extraction",
-    description: "Converting pixels to financial data",
-  },
-  {
-    id: 4,
-    title: "Validation & PO Match",
-    description: "Ensuring policy compliance",
-  },
-];
-
-const STATUS_LABEL: Record<string, string> = {
-  Uploaded: "Uploaded",
-  Matched: "Matched",
-  "Review Required": "Review Required",
-  "OCR Completed": "OCR Completed",
-  "Validation Completed": "Validation Completed",
-  "PO Completed": "PO Completed",
-  Rejected: "Rejected",
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  Uploaded: "text-primary",
-  Matched: "text-green-700",
-  "Review Required": "text-yellow-700",
-  "OCR Completed": "text-blue-600",
-  "Validation Completed": "text-green-700",
-  "PO Completed": "text-indigo-700",
-  Rejected: "text-error",
-};
+  STEPS,
+  STATUS_BG_COLOR,
+  STATUS_COLOR,
+  STATUS_ICON_COLOR,
+  STATUS_LABEL,
+  useInvoiceProcessing,
+} from "@/context/InvoiceProcessingContext";
+import { fmtDate, type Invoice } from "@/lib/invoices";
+import { formatRand } from "@/lib/currency";
 
 export default function DashboardPage() {
   const router = useRouter();
+  const {
+    fileName,
+    stepStates,
+    currentStatus,
+    currentStatusRaw,
+    currentStepIndex,
+    running,
+    completed,
+    notice,
+    clearNotice,
+    startProcessing,
+  } = useInvoiceProcessing();
 
   const [dragging, setDragging] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
-
-  const [stepStates, setStepStates] = useState<StepState[]>(
-    STEPS.map(() => "pending"),
-  );
-
-  const [running, setRunning] = useState(false);
-  const [completed, setCompleted] = useState(false);
-  const [newInvoiceId, setNewInvoiceId] = useState<string | null>(null);
   const [recent, setRecent] = useState<Invoice[]>([]);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const updateSystemStatus = (status: string) => {
-
-  const currentStep = STATUS_TO_STEP[status] ?? 0;
-
-    setStepStates(
-      STEPS.map((_, index) => {
-
-        if (index < currentStep)
-          return "done";
-
-        if (index === currentStep)
-          return "active";
-
-        return "pending";
-
-      })
-    );
-  };
-
   const refreshRecent = useCallback(async () => {
-      try {
-          const response = await getInvoices();
-
-          setRecent(response.data.slice(0, 6));
-
-      } catch (error) {
-          console.error(error);
-      }
+    try {
+      const response = await getInvoices();
+      const list = Array.isArray(response?.data) ? response.data : [];
+      setRecent(list.slice(0, 6));
+    } catch (error) {
+      console.error(error);
+      setRecent([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -126,7 +49,7 @@ export default function DashboardPage() {
 
     const onUpdate = () => {
       void refreshRecent();
-  };
+    };
 
     window.addEventListener("invoices:updated", onUpdate);
 
@@ -135,99 +58,10 @@ export default function DashboardPage() {
     };
   }, [refreshRecent]);
 
-  /*
-   * Clear the processing timer when the user leaves this page.
-   * This prevents state updates after the component is unmounted.
-   */
-
   const stats = {
     total: recent.length,
     avgTime: "1.4s",
   };
-
-  const runProcessing = useCallback(
-    async (file: File) => {
-      return new Promise<void>(async (resolve) => {
-        setFileName(file.name);
-        setCompleted(false);
-        setRunning(true);
-        setNewInvoiceId(null);
-        setStepStates(STEPS.map(() => "pending"));
-
-            try {
-
-                const result = await analyzeInvoice(file);
-
-                if (result.success) {
-
-                        const invoiceId = result.invoice_id;
-
-                        if (!invoiceId) {
-                            console.error("Invoice ID not returned:", result);
-                            resolve();
-                            return;
-                        }
-
-                        setNewInvoiceId(String(invoiceId));
-
-                        const interval = setInterval(async () => {
-
-                          try {
-
-                              const response = await getInvoice(invoiceId);
-                              const invoice = response.data;
-
-                              updateSystemStatus(invoice.processing_status);
-
-                              if (
-                                invoice.processing_status === "OCR Completed" ||
-                                invoice.processing_status === "Validation Completed" ||
-                                invoice.processing_status === "PO Completed" ||
-                                invoice.processing_status === "Rejected"
-                            ) {
-
-                                  clearInterval(interval);
-
-                                  setCompleted(true);
-
-                                  setRunning(false);
-
-                                  await refreshRecent();
-
-                                  window.dispatchEvent(new Event("invoices:updated"));
-
-                                  router.push(`/dashboard/invoices/${invoiceId}/validation`);
-                              }
-
-                          } catch (error) {
-
-                              console.error(error);
-
-                              clearInterval(interval);
-
-                              setRunning(false);
-                          }
-
-                      }, 2000);
-
-                    }
-
-              resolve();
-
-            } catch (error) {
-
-                console.error(error);
-
-                alert("Invoice upload failed.");
-
-                setRunning(false);
-                resolve();
-
-            }
-      });
-    },
-    [refreshRecent],
-  );
 
   const handleFiles = useCallback(
     async (files: FileList | null) => {
@@ -247,10 +81,10 @@ export default function DashboardPage() {
       }
 
       for (const file of pdfFiles) {
-        await runProcessing(file);
+        await startProcessing(file);
       }
     },
-    [running, runProcessing],
+    [running, startProcessing],
   );
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -281,6 +115,43 @@ export default function DashboardPage() {
       </div>
 
       <main className="relative z-10 mx-auto w-full max-w-container-max px-margin-desktop py-12">
+        {notice && (
+          <div
+            role="alert"
+            className={`mb-6 flex items-start gap-4 rounded-xl border p-4 shadow-md ${
+              notice.type === "duplicate"
+                ? "border-yellow-300 bg-yellow-50 text-yellow-900"
+                : notice.type === "error"
+                  ? "border-red-300 bg-red-50 text-red-900"
+                  : "border-blue-300 bg-blue-50 text-blue-900"
+            }`}
+          >
+            <span className="material-symbols-outlined mt-0.5 shrink-0 text-[22px]">
+              {notice.type === "duplicate"
+                ? "content_copy"
+                : notice.type === "error"
+                  ? "error"
+                  : "info"}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="font-title-lg text-title-lg font-semibold">
+                {notice.title}
+              </p>
+              <p className="mt-1 font-body-md text-body-md whitespace-pre-wrap">
+                {notice.message}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={clearNotice}
+              className="shrink-0 rounded-md px-2 py-1 font-label-md text-label-md opacity-70 hover:opacity-100"
+              aria-label="Dismiss message"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
         {/*
          * Desktop layout:
          *
@@ -501,7 +372,11 @@ export default function DashboardPage() {
                   System Status
                 </h3>
 
-                {completed ? (
+                {notice?.type === "duplicate" ? (
+                  <span className="whitespace-nowrap font-label-md text-yellow-700">
+                    Duplicate
+                  </span>
+                ) : completed ? (
                   <span className="whitespace-nowrap font-label-md text-success">
                     Completed
                   </span>
@@ -516,43 +391,147 @@ export default function DashboardPage() {
                 )}
               </div>
 
+              <div
+                className={`mb-6 rounded-lg border-2 border-outline-variant/30 p-4 transition-all duration-500 ${
+                  running
+                    ? STATUS_BG_COLOR[currentStatusRaw] ||
+                      "bg-surface-container-high/40"
+                    : "bg-surface-container-high/40"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                      running && currentStepIndex >= 0
+                        ? STATUS_ICON_COLOR[currentStatusRaw] || "text-primary"
+                        : "text-on-surface-variant/40"
+                    }`}
+                  >
+                    {running && currentStepIndex >= 0 ? (
+                      <span className="material-symbols-outlined text-[18px]">
+                        {currentStepIndex === 0
+                          ? "cloud_upload"
+                          : currentStepIndex === 1
+                            ? "description"
+                            : currentStepIndex === 2
+                              ? "verified_user"
+                              : currentStepIndex === 3
+                                ? "pending_actions"
+                                : "check_circle"}
+                      </span>
+                    ) : (
+                      <span className="material-symbols-outlined text-[18px]">
+                        schedule
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-label-md text-label-md text-on-surface-variant">
+                      Current stage
+                    </p>
+                    <p
+                      className={`mt-1 font-title-lg text-title-lg transition-colors duration-300 ${
+                        running && currentStepIndex >= 0
+                          ? STATUS_ICON_COLOR[currentStatusRaw] ||
+                            "text-on-surface"
+                          : "text-on-surface"
+                      }`}
+                    >
+                      {currentStatus}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {running && (
+                <div className="mb-6 flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-outline-variant/20">
+                      <div
+                        className="h-full transition-all duration-500 ease-out"
+                        style={{
+                          width: `${((currentStepIndex + 1) / STEPS.length) * 100}%`,
+                          backgroundColor:
+                            currentStepIndex === 0
+                              ? "rgb(99, 102, 241)"
+                              : currentStepIndex === 1
+                                ? "rgb(59, 130, 246)"
+                                : currentStepIndex === 2
+                                  ? "rgb(34, 197, 94)"
+                                  : currentStepIndex === 3
+                                    ? "rgb(168, 85, 247)"
+                                    : "rgb(34, 197, 94)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <span className="whitespace-nowrap font-label-md text-label-md text-on-surface-variant">
+                    {currentStepIndex + 1} of {STEPS.length}
+                  </span>
+                </div>
+              )}
+
               <div className="relative space-y-8">
                 <div className="absolute bottom-2 left-3 top-2 w-[2px] bg-outline-variant/20" />
 
                 {STEPS.map((step, index) => {
                   const state = stepStates[index];
+                  const isCompleted = state === "done";
+                  const isActive = state === "active";
 
                   return (
                     <div
                       key={step.id}
-                      className="relative flex items-center gap-6"
+                      className={`relative flex items-center gap-6 transition-opacity duration-300 ${
+                        isCompleted || isActive ? "opacity-100" : "opacity-60"
+                      }`}
                     >
                       <div
-                        className={`z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ${
-                          state === "done"
-                            ? "bg-success"
-                            : state === "active"
-                              ? "animate-pulse bg-primary"
-                              : "bg-outline-variant/30"
+                        className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-semibold transition-all duration-300 ${
+                          isCompleted
+                            ? "scale-100 bg-success shadow-lg shadow-success/30"
+                            : isActive
+                              ? "scale-110 animate-pulse bg-primary shadow-lg shadow-primary/40"
+                              : "scale-95 bg-outline-variant/20"
                         }`}
                       >
-                        {state === "done" && (
-                          <span className="material-symbols-outlined text-[14px] text-white">
+                        {isCompleted && (
+                          <span className="material-symbols-outlined text-[16px] text-white">
                             check
                           </span>
                         )}
 
-                        {state === "active" && (
-                          <div className="h-2 w-2 rounded-full bg-white" />
+                        {isActive && (
+                          <div className="h-2.5 w-2.5 rounded-full bg-white" />
+                        )}
+
+                        {!isCompleted && !isActive && (
+                          <span className="text-xs text-on-surface-variant">
+                            {index + 1}
+                          </span>
                         )}
                       </div>
 
-                      <div>
-                        <p className="mb-1 font-title-lg text-title-lg leading-none text-on-surface">
+                      <div className="flex-1">
+                        <p
+                          className={`mb-1 font-title-lg text-title-lg leading-none transition-colors duration-300 ${
+                            isCompleted
+                              ? "text-success"
+                              : isActive
+                                ? "text-primary font-semibold"
+                                : "text-on-surface-variant"
+                          }`}
+                        >
                           {step.title}
                         </p>
 
-                        <p className="font-label-md text-label-md text-on-surface-variant">
+                        <p
+                          className={`font-label-md transition-colors duration-300 ${
+                            isCompleted || isActive
+                              ? "text-on-surface-variant"
+                              : "text-on-surface-variant/50"
+                          }`}
+                        >
                           {step.description}
                         </p>
                       </div>
@@ -600,10 +579,11 @@ export default function DashboardPage() {
                     type="button"
                     onClick={() => {
                       const destination =
-                        invoice.processing_status === "OCR Completed" ||
-                        invoice.processing_status === "Validation Completed" ||
+                        invoice.processing_status === "Approval Pending" ||
+                        invoice.processing_status === "Approved" ||
+                        invoice.processing_status === "Rejected" ||
                         invoice.processing_status === "PO Completed" ||
-                        invoice.processing_status === "Rejected"
+                        invoice.processing_status === "PO Generated"
                             ? `/dashboard/invoices/${invoice.id}/approval`
                             : `/dashboard/invoices/${invoice.id}/validation`;
 
@@ -623,7 +603,7 @@ export default function DashboardPage() {
 
                     <div className="ml-4 flex shrink-0 items-center gap-4">
                       <span className="font-body-md text-body-md text-on-surface">
-                        ${invoice.total_amount.toFixed(2)}
+                        {formatRand(invoice.total_amount, invoice.currency)}
                       </span>
 
                       <span

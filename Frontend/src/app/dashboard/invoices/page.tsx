@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/invoices";
 import { getInvoices } from "@/services/api";
+import { formatRand } from "@/lib/currency";
 
 interface Invoice {
   id: number;
@@ -19,54 +20,71 @@ interface Invoice {
 
 const STATUS_LABEL: Record<string, string> = {
   Uploaded: "Uploaded",
+  "OCR Completed": "OCR Completed",
+  "Validation Completed": "Validation Completed",
   Matched: "Matched",
   "Review Required": "Review Required",
   "Approval Pending": "Approval Pending",
   Approved: "Approved",
   Rejected: "Rejected",
+  Duplicate: "Duplicate",
+  Failed: "Failed",
   "PO Generated": "PO Generated",
+  "PO Completed": "PO Completed",
 };
 
 const STATUS_STYLE: Record<string, string> = {
   Uploaded: "bg-primary/10 text-primary",
+  "OCR Completed": "bg-blue-50 text-blue-700",
+  "Validation Completed": "bg-green-50 text-green-700",
   Matched: "bg-green-50 text-green-700",
   "Review Required": "bg-yellow-50 text-yellow-700",
   "Approval Pending": "bg-secondary-container text-on-secondary-container",
   Approved: "bg-green-50 text-green-700",
   Rejected: "bg-error-container text-on-error-container",
+  Duplicate: "bg-yellow-50 text-yellow-700",
+  Failed: "bg-error-container text-on-error-container",
   "PO Generated": "bg-blue-50 text-blue-700",
+  "PO Completed": "bg-indigo-50 text-indigo-700",
 };
 
 export default function InvoicesListPage() {
   const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
 
     const refresh = async () => {
-
-        try {
-
-            const response = await getInvoices();
-
-            setInvoices(response.data);
-
-        } catch (error) {
-
-            console.error(error);
-
-        }
-
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await getInvoices();
+        if (cancelled) return;
+        setInvoices(Array.isArray(response?.data) ? response.data : []);
+      } catch (err) {
+        console.error(err);
+        if (cancelled) return;
+        setError(
+          err instanceof Error ? err.message : "Failed to load invoices.",
+        );
+        setInvoices([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     };
 
-    refresh();
+    void refresh();
 
     window.addEventListener("invoices:updated", refresh);
 
-    return () =>
-        window.removeEventListener("invoices:updated", refresh);
-
-}, []);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("invoices:updated", refresh);
+    };
+  }, []);
 
   return (
     <div className="max-w-container-max mx-auto px-margin-desktop w-full py-12">
@@ -83,7 +101,15 @@ export default function InvoicesListPage() {
         </button>
       </div>
 
-      {invoices.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
+        </div>
+      ) : error ? (
+        <div className="rounded-xl border border-red-300 bg-red-50 p-6 text-red-900">
+          {error}
+        </div>
+      ) : invoices.length === 0 ? (
         <div className="bg-surface-container-lowest rounded-xl p-16 text-center shadow-sm">
           <p className="font-title-lg text-title-lg text-on-surface mb-2">
             No invoices yet
@@ -118,16 +144,16 @@ export default function InvoicesListPage() {
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="font-title-lg text-title-lg text-on-surface truncate">
-                    {inv.vendor_name}
+                    {inv.vendor_name || "Unknown vendor"}
                   </span>
                   <span className="font-label-md text-label-md text-on-surface-variant truncate">
-                    {inv.invoice_number} · {fmtDate(inv.invoice_date)}
+                    {inv.invoice_number || "—"} · {fmtDate(inv.invoice_date)}
                   </span>
                 </div>
               </button>
               <div className="flex items-center gap-4 shrink-0">
                 <span className="font-title-lg text-title-lg text-on-surface">
-                  {inv.currency} {inv.total_amount.toFixed(2)}
+                  {formatRand(inv.total_amount, inv.currency)}
                 </span>
                 <span
                   className={`font-label-md text-label-md px-3 py-1.5 rounded-full ${
@@ -152,7 +178,9 @@ export default function InvoicesListPage() {
                   title={
                     inv.processing_status === "Approval Pending" ||
                     inv.processing_status === "Approved" ||
-                    inv.processing_status === "Rejected"
+                    inv.processing_status === "Rejected" ||
+                    inv.processing_status === "PO Completed" ||
+                    inv.processing_status === "PO Generated"
                       ? "Go to approval"
                       : "Go to validation"
                   }
@@ -160,9 +188,11 @@ export default function InvoicesListPage() {
                     router.push(
                       inv.processing_status === "Approval Pending" ||
                         inv.processing_status === "Approved" ||
-                        inv.processing_status === "Rejected"
+                        inv.processing_status === "Rejected" ||
+                        inv.processing_status === "PO Completed" ||
+                        inv.processing_status === "PO Generated"
                         ? `/dashboard/invoices/${inv.id}/approval`
-                        : `/dashboard/invoices/${inv.id}/validation`
+                        : `/dashboard/invoices/${inv.id}/validation`,
                     )
                   }
                   className="w-9 h-9 rounded-full flex items-center justify-center bg-surface-container text-on-surface-variant hover:bg-primary/10 hover:text-primary transition-colors"
@@ -172,7 +202,7 @@ export default function InvoicesListPage() {
                   </span>
                 </button>
               </div>
-            </div>  
+            </div>
           ))}
         </div>
       )}

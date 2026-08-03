@@ -7,6 +7,7 @@ import {
     updateInvoiceStatus,
 } from "@/services/api";
 import { fmtDate } from "@/lib/invoices";
+import { formatRand } from "@/lib/currency";
 
 interface LineItem {
   id: number;
@@ -180,7 +181,7 @@ export default function InvoiceValidationPage() {
                 Amount Due
               </span>
               <span className="font-title-md text-title-md text-on-surface">
-                ${invoice.total_amount.toFixed(2)}
+                {formatRand(invoice.total_amount, invoice.currency)}
               </span>
             </div>
             <div className="flex flex-col text-right">
@@ -188,7 +189,7 @@ export default function InvoiceValidationPage() {
                 Currency
               </span>
               <span className="font-body-md text-body-md text-on-surface">
-                {invoice.currency}
+                ZAR
               </span>
             </div>
           </div>
@@ -259,7 +260,7 @@ export default function InvoiceValidationPage() {
                 </div>
                 <div className="flex flex-col items-end">
                   <span className="font-body-md text-body-md text-on-surface font-semibold">
-                    {invoice.currency} {item.amount.toFixed(2)}
+                    {formatRand(item.amount, invoice.currency)}
                   </span>
                   <span className="font-label-sm text-label-sm text-on-surface-variant">
                     Qty: {item.quantity}
