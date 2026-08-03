@@ -12,6 +12,8 @@ type ChatMessage = {
   cards?: Invoice[];
   time: string;
 };
+const API_URL =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const SUGGESTIONS = [
   "Summarize invoices this month",
@@ -96,7 +98,7 @@ export default function AssistantPage() {
 
   try {
     const response = await fetch(
-      "http://localhost:8000/azure-openai/chat",
+      `${API_URL}/azure-openai/chat`,
       {
         method: "POST",
         headers: {
