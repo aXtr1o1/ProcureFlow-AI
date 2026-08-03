@@ -7,7 +7,6 @@ import type { Invoice } from "@/lib/invoices";
 import { formatRand } from "@/lib/currency";
 import {
   useAssistantChat,
-  type ChatMessage,
   type ChatSource,
 } from "@/context/AssistantChatContext";
 
@@ -45,22 +44,6 @@ function asText(value: unknown, fallback = ""): string {
   } catch {
     return fallback || "Unexpected response";
   }
-}
-
-function formatApiError(detail: unknown): string {
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail
-      .map((item) => {
-        if (typeof item === "string") return item;
-        if (item && typeof item === "object" && "msg" in item) {
-          return String((item as { msg?: string }).msg || item);
-        }
-        return asText(item);
-      })
-      .join(", ");
-  }
-  return asText(detail, "Assistant request failed.");
 }
 
 function buildGreeting(invoices: Invoice[]): string {
@@ -301,12 +284,17 @@ function SourceCard({
 
 export default function AssistantPage() {
   const router = useRouter();
-  const { messages, setMessages, clearMessages, hydrated } = useAssistantChat();
+  const {
+    messages,
+    setMessages,
+    clearMessages,
+    hydrated,
+    typing,
+    status,
+    sendMessage,
+  } = useAssistantChat();
   const [input, setInput] = useState("");
-  const [typing, setTyping] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const sendingRef = useRef(false);
   const greetingLoaded = useRef(false);
 
   useEffect(() => {
@@ -353,82 +341,8 @@ export default function AssistantPage() {
   }, [messages, typing, status]);
 
   const send = async (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed || sendingRef.current) return;
-
-    sendingRef.current = true;
-    setMessages((prev: ChatMessage[]) => [
-      ...prev,
-      {
-        id: newId(),
-        role: "user",
-        text: trimmed,
-        time: timeNow(),
-      },
-    ]);
-
     setInput("");
-    setTyping(true);
-    setStatus("Searching your invoice documents…");
-
-    try {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 120000);
-
-      const response = await fetch(`${API_URL}/azure-openai/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: trimmed,
-        }),
-        signal: controller.signal,
-      });
-
-      window.clearTimeout(timeout);
-      setStatus("Writing answer…");
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(formatApiError(data.detail));
-      }
-
-      setMessages((prev: ChatMessage[]) => [
-        ...prev,
-        {
-          id: newId(),
-          role: "bot",
-          text: asText(data.response, "No answer returned."),
-          searchQuery: asText(data.search_query) || undefined,
-          sources: Array.isArray(data.sources) ? data.sources : [],
-          time: timeNow(),
-        },
-      ]);
-    } catch (err) {
-      console.error(err);
-      const message =
-        err instanceof DOMException && err.name === "AbortError"
-          ? "The assistant request timed out. Please try a shorter question."
-          : err instanceof Error
-            ? err.message
-            : "Sorry, I couldn't process your request.";
-
-      setMessages((prev: ChatMessage[]) => [
-        ...prev,
-        {
-          id: newId(),
-          role: "bot",
-          text: message,
-          time: timeNow(),
-        },
-      ]);
-    } finally {
-      setTyping(false);
-      setStatus(null);
-      sendingRef.current = false;
-    }
+    await sendMessage(text);
   };
 
   const handleSubmit = (e: FormEvent) => {

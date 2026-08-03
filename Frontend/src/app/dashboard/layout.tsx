@@ -8,7 +8,7 @@ import {
   InvoiceProcessingProvider,
   useInvoiceProcessing,
 } from "@/context/InvoiceProcessingContext";
-import { AssistantChatProvider } from "@/context/AssistantChatContext";
+import { AssistantChatProvider, useAssistantChat } from "@/context/AssistantChatContext";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
@@ -96,6 +96,37 @@ function ProcessingBanner() {
   );
 }
 
+function AssistantBanner() {
+  const pathname = usePathname();
+  const { typing, status } = useAssistantChat();
+
+  if (!typing || pathname === "/dashboard/assistant") {
+    return null;
+  }
+
+  return (
+    <div className="sticky top-16 z-40 border-b border-primary/20 bg-primary/5 px-4 py-3">
+      <div className="mx-auto flex max-w-container-max items-center gap-3">
+        <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-label-md text-label-md text-on-surface">
+            Assistant is generating a response…
+          </p>
+          <p className="font-body-md text-body-md text-on-surface-variant">
+            {status || "Working…"} — kept while you navigate
+          </p>
+        </div>
+        <Link
+          href="/dashboard/assistant"
+          className="shrink-0 font-label-md text-label-md text-primary underline"
+        >
+          Open chat
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardLayout({
   children,
 }: {
@@ -122,6 +153,7 @@ export default function DashboardLayout({
         <Header />
         <main className="w-full pt-16 bg-surface min-h-[calc(100vh-80px)]">
           <ProcessingBanner />
+          <AssistantBanner />
           {children}
         </main>
         <Footer />
