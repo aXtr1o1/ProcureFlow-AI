@@ -30,3 +30,24 @@ class InvoiceStatusResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
+
+class InvoiceDetailResponse(BaseModel):
+    id: int
+    invoice_number: str
+    vendor_name: str | None = None
+    customer_name: str | None = None
+
+    invoice_date: str | None = None
+    due_date: str | None = None
+
+    currency: str | None = None
+
+    total_amount: float | None = None
+
+    processing_status: str
+
+    blob_url: str | None = None      # <-- NEW
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )

@@ -193,7 +193,7 @@ async def download_invoice(blob_name: str):
             io.BytesIO(data),
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
+                "Content-Disposition": f'inline; filename="{filename}"'
             }
         )
 
