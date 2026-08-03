@@ -1,7 +1,10 @@
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.core.credentials import AzureKeyCredential
+import logging
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 class DocumentIntelligenceService:
 
@@ -21,17 +24,23 @@ class DocumentIntelligenceService:
     def analyze_invoice(self, invoice_bytes: bytes):
 
         try:
-
+            logger.info(f"Starting Azure Document Intelligence analysis. File size: {len(invoice_bytes)} bytes")
+            
             poller = self.client.begin_analyze_document(
                 model_id="prebuilt-invoice",
                 body=invoice_bytes
             )
 
+            logger.info("Waiting for Azure analysis to complete...")
             result = poller.result()
-
-            return self._parse_invoice(result)
+            
+            logger.info(f"Azure analysis complete. Document count: {len(result.documents)}")
+            parsed = self._parse_invoice(result)
+            logger.info(f"Parsed invoice result: {parsed}")
+            return parsed
 
         except Exception as e:
+            logger.error(f"Document Intelligence Error: {str(e)}", exc_info=True)
             raise Exception(f"Document Intelligence Error: {str(e)}")
 
     # =====================================================
@@ -62,10 +71,17 @@ class DocumentIntelligenceService:
 
     def _parse_invoice(self, result):
 
+        logger.info(f"Parsing invoice result. Total documents: {len(result.documents)}")
+        
+        if not result.documents:
+            logger.error("No documents found in Azure response")
+            return {}
+
         invoices = []
 
-        for document in result.documents:
-
+        for doc_idx, document in enumerate(result.documents):
+            logger.info(f"Processing document {doc_idx + 1}")
+            
             invoice = {
                 "invoice_number": None,
                 "vendor_name": None,
@@ -87,6 +103,21 @@ class DocumentIntelligenceService:
             }
 
             fields = document.fields
+            logger.info(f"Available fields: {list(fields.keys())}")
+            
+            # Log all field values for debugging
+            for field_name in fields.keys():
+                field_value = fields[field_name]
+                if hasattr(field_value, 'value_string'):
+                    logger.info(f"  {field_name}: {field_value.value_string}")
+                elif hasattr(field_value, 'value_date'):
+                    logger.info(f"  {field_name}: {field_value.value_date}")
+                elif hasattr(field_value, 'value_currency'):
+                    logger.info(f"  {field_name}: {field_value.value_currency}")
+                elif hasattr(field_value, 'value_array'):
+                    logger.info(f"  {field_name}: [Array with {len(field_value.value_array)} items]")
+                else:
+                    logger.info(f"  {field_name}: {field_value.content if hasattr(field_value, 'content') else str(field_value)}")
 
             # ----------------------------
             # Header Information
@@ -94,9 +125,15 @@ class DocumentIntelligenceService:
 
             if "InvoiceId" in fields:
                 invoice["invoice_number"] = fields["InvoiceId"].value_string
+                logger.info(f"✓ Invoice ID: {invoice['invoice_number']}")
+            else:
+                logger.warning("InvoiceId field not found in Azure response")
 
             if "VendorName" in fields:
                 invoice["vendor_name"] = fields["VendorName"].value_string
+                logger.info(f"✓ Vendor Name: {invoice['vendor_name']}")
+            else:
+                logger.warning("VendorName field not found in Azure response")
 
             if "VendorAddress" in fields:
                 invoice["vendor_address"] = fields["VendorAddress"].content
@@ -193,6 +230,8 @@ class DocumentIntelligenceService:
             invoices.append(invoice)
 
         if invoices:
+            logger.info(f"Successfully parsed invoice: {invoices[0]['invoice_number']}")
             return invoices[0]
 
+        logger.error("No invoices were parsed from the Azure response")
         return {}

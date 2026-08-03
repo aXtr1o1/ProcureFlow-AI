@@ -1,12 +1,16 @@
+from typing import Optional
+
 from sqlalchemy.orm import Session
 
 from app.database.models import (
     Invoice,
+    InvoiceLineItem,
     InvoiceStatusLog,
     ApprovalHistory,
 )
 from app.services.purchase_order_service import PurchaseOrderService
 from app.services.audit_service import AuditService
+from app.services.currency_service import convert_invoice_amounts_to_zar, to_zar
 
 
 class ApprovalService:
@@ -41,19 +45,92 @@ class ApprovalService:
         )
 
     # ======================================================
+    # Apply edits made during approval
+    # ======================================================
+    def apply_invoice_edits(self, invoice: Invoice, edits) -> None:
+        if edits is None:
+            return
+
+        source_currency = getattr(edits, "currency", None) or invoice.currency or "ZAR"
+
+        header_map = {
+            "invoice_number": getattr(edits, "invoice_number", None),
+            "vendor_name": getattr(edits, "vendor_name", None),
+            "vendor_address": getattr(edits, "vendor_address", None),
+            "customer_name": getattr(edits, "customer_name", None),
+            "invoice_date": getattr(edits, "invoice_date", None),
+            "due_date": getattr(edits, "due_date", None),
+            "purchase_order_number": getattr(edits, "purchase_order_number", None),
+            "currency": "ZAR",
+            "subtotal": getattr(edits, "subtotal", None),
+            "tax": getattr(edits, "tax", None),
+            "total_amount": getattr(edits, "total_amount", None),
+        }
+
+        converted = convert_invoice_amounts_to_zar(
+            {
+                "currency": source_currency,
+                "subtotal": header_map["subtotal"]
+                if header_map["subtotal"] is not None
+                else invoice.subtotal,
+                "tax": header_map["tax"] if header_map["tax"] is not None else invoice.tax,
+                "total_amount": header_map["total_amount"]
+                if header_map["total_amount"] is not None
+                else invoice.total_amount,
+                "line_items": [],
+            }
+        )
+
+        for field, value in header_map.items():
+            if field in {"subtotal", "tax", "total_amount"}:
+                continue
+            if value is not None:
+                setattr(invoice, field, value)
+
+        invoice.currency = "ZAR"
+        invoice.subtotal = converted["subtotal"]
+        invoice.tax = converted["tax"]
+        invoice.total_amount = converted["total_amount"]
+
+        if not edits.line_items:
+            return
+
+        line_by_id = {item.id: item for item in invoice.line_items}
+
+        for line_edit in edits.line_items:
+            line: Optional[InvoiceLineItem] = line_by_id.get(line_edit.id)
+            if line is None:
+                continue
+
+            if line_edit.description is not None:
+                line.description = line_edit.description
+            if line_edit.quantity is not None:
+                line.quantity = line_edit.quantity
+            if line_edit.unit_price is not None:
+                line.unit_price = to_zar(line_edit.unit_price, source_currency)
+            if line_edit.amount is not None:
+                line.amount = to_zar(line_edit.amount, source_currency)
+            elif line.quantity is not None and line.unit_price is not None:
+                line.amount = float(line.quantity) * float(line.unit_price)
+
+    # ======================================================
     # Approve Invoice
     # ======================================================
     def approve_invoice(
         self,
         invoice_id: int,
         approved_by: str,
-        user_id: int
+        user_id: int,
+        invoice_edits=None,
     ):
 
         invoice = self.get_invoice(invoice_id)
 
         if invoice is None:
             return None
+
+        # Persist any reviewer corrections before marking approved / generating PO
+        self.apply_invoice_edits(invoice, invoice_edits)
 
         invoice.processing_status = "Approved"
 

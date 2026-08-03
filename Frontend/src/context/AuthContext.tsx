@@ -4,6 +4,7 @@ import {
   register,
   getCurrentUser,
 } from "@/services/api";
+import { clearAssistantChatStorage } from "@/lib/assistantChatStorage";
 
 import {
   createContext,
@@ -159,13 +160,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = () => {
-
+    clearAssistantChatStorage(user?.email);
     localStorage.removeItem("access_token");
     localStorage.removeItem(STORAGE_KEY);
-
     persist(null);
-
-};
+  };
 
   const value = useMemo(
     () => ({ user, loading, signIn, signUp, signOut }),
