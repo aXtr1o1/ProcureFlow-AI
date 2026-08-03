@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  getApprovalDetails,
+  getInvoice,
   approveInvoice,
   rejectInvoice,
   getApprovalHistory,
@@ -19,18 +19,43 @@ interface ApprovalHistory {
     approved_at: string;
 }
 
+interface LineItem {
+  id: number;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  amount: number;
+}
+
 interface Invoice {
   id: number;
+
   invoice_number: string;
+
   vendor_name: string;
+  vendor_address: string;
+
+  customer_name: string;
+
   invoice_date: string;
   due_date: string;
-  total_amount: number;
+
+  purchase_order_number: string;
+
   currency: string;
+
+  subtotal: number;
+
+  tax: number;
+
+  total_amount: number;
+
   processing_status: string;
+
   blob_name: string;
   blob_url: string;
-  status_logs: ApprovalHistory[];
+
+  line_items: LineItem[];
 }
 
 export default function InvoiceApprovalPage() {
@@ -50,12 +75,15 @@ export default function InvoiceApprovalPage() {
   const [invoice, setInvoice] = useState<Invoice | null | undefined>(undefined);
   const [deciding, setDeciding] = useState<"approved" | "rejected" | null>(null);
   const [history, setHistory] = useState<ApprovalHistory[]>([]);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectComment, setRejectComment] = useState("");
 
   useEffect(() => {
       const loadApproval = async () => {
           try {
-              const response = await getApprovalDetails(params.id);
-              setInvoice(response);
+              const response = await getInvoice(params.id);
+              console.log("Invoice Response:", response);
+              setInvoice(response.data);
               const historyResponse = await getApprovalHistory(params.id);
               setHistory(historyResponse);
           } catch {
@@ -91,54 +119,68 @@ export default function InvoiceApprovalPage() {
   }
 
   const handleDecision = async (
-    decision: "approved" | "rejected"
-  ) => {
+  decision: "approved" | "rejected"
+) => {
 
-    // Prevent multiple clicks
-    if (deciding) return;
+  if (deciding) return;
 
-    setDeciding(decision);
+  if (decision === "rejected") {
+    setShowRejectDialog(true);
+    return;
+  }
 
-    try {
+  setDeciding("approved");
 
-      if (decision === "approved") {
+  try {
 
-        await approveInvoice(
-          invoice.id,
-          "Manager"
-        );
+    await approveInvoice(
+      invoice.id,
+      "Manager"
+    );
 
-      } else {
+    router.replace("/dashboard/invoices");
 
-        const ok = window.confirm(
-          "Are you sure you want to reject this invoice?"
-        );
+  } catch (error) {
 
-        if (!ok) {
-          return;
-        }
+    console.error(error);
 
-        await rejectInvoice(
-          invoice.id,
-          "Manager",
-          "Rejected during approval."
-        );
+  } finally {
 
-      }
+    setDeciding(null);
 
-      // Redirect after API success
-      router.replace("/dashboard/invoices");
+  }
+};
 
-    } catch (error) {
+const confirmReject = async () => {
+  if (!rejectComment.trim()) {
+    alert("Please enter a rejection reason.");
+    return;
+  }
 
-      console.error(error);
+  setDeciding("rejected");
 
-    } finally {
+  try {
 
-      setDeciding(null);
+    await rejectInvoice(
+      invoice.id,
+      "Manager",
+      rejectComment
+    );
 
-    }
-  };
+    router.replace("/dashboard/invoices");
+
+  } catch (error) {
+
+    console.error(error);
+
+  } finally {
+
+    setDeciding(null);
+    setShowRejectDialog(false);
+    setRejectComment("");
+
+  }
+};
 
 
   const isDecided = [
@@ -234,13 +276,63 @@ export default function InvoiceApprovalPage() {
               </span>
               <div className="flex items-baseline gap-xs">
                 <span className="font-display-lg text-display-lg text-on-background tracking-tight">
-                  ${invoice.total_amount.toFixed(2)}
+                  ${invoice.total_amount?.toFixed(2) ?? "0.00"}
                 </span>
                 <span className="font-body-sm text-body-sm text-on-surface-variant">
                   {invoice.currency}
                 </span>
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-4 mt-6">
+
+              <div>
+                <p className="text-sm text-gray-500">Customer</p>
+                <p>{invoice.customer_name}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Vendor Address</p>
+                <p>{invoice.vendor_address}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Invoice Date</p>
+                <p>{invoice.invoice_date}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Due Date</p>
+                <p>{invoice.due_date}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Subtotal</p>
+                <p>{invoice.currency} {invoice.subtotal}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Tax</p>
+                <p>{invoice.currency} {invoice.tax}</p>
+              </div>
+
+            </div>
+            <div className="mt-8">
+            <h3 className="font-semibold mb-3">
+              Line Items
+            </h3>
+
+            {invoice.line_items?.map((item) => (
+              <div
+                key={item.id}
+                className="border rounded-lg p-3 mb-2"
+              >
+                <p><strong>Description:</strong> {item.description}</p>
+                <p><strong>Qty:</strong> {item.quantity}</p>
+                <p><strong>Unit Price:</strong> {item.unit_price}</p>
+                <p><strong>Amount:</strong> {item.amount}</p>
+              </div>
+            ))}
+          </div>
           </div>
         </div>
 
@@ -267,7 +359,9 @@ export default function InvoiceApprovalPage() {
                       {item.decision}
                     </span>
                     <span className="font-body-sm text-body-sm text-on-surface-variant">
-                      {item.remarks}· {fmtDate(item.approved_at)}
+                      {item.remarks}
+                      <br />
+                      {fmtDate(item.approved_at)}
                     </span>
                   </div>
                 </div>
@@ -291,6 +385,55 @@ export default function InvoiceApprovalPage() {
           </div>
         </div>
         </div>
+
+      {showRejectDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100]">
+          <div className="bg-white rounded-xl shadow-xl w-[500px] p-6">
+
+            <h2 className="text-xl font-semibold mb-4">
+              Reject Invoice
+            </h2>
+
+            <p className="text-gray-600 mb-3">
+              Please provide a reason for rejecting this invoice.
+            </p>
+
+            <textarea
+              rows={5}
+              value={rejectComment}
+              onChange={(e) => setRejectComment(e.target.value)}
+              placeholder="Enter rejection comments..."
+              className="w-full border rounded-lg p-3 resize-none"
+            />
+
+            <div className="flex justify-end gap-3 mt-5">
+
+              <button
+                disabled={deciding === "rejected"}
+                onClick={() => {
+                  setShowRejectDialog(false);
+                  setRejectComment("");
+                }}
+                className="px-4 py-2 rounded-lg border disabled:opacity-60"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={confirmReject}
+                disabled={deciding === "rejected"}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white disabled:opacity-60"
+              >
+                {deciding === "rejected"
+                  ? "Rejecting..."
+                  : "Reject Invoice"}
+              </button>
+
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* Fixed Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-surface/90 backdrop-blur-xl border-t border-outline-variant px-lg py-md z-50">

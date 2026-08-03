@@ -350,5 +350,5 @@ export async function generateSummary(invoiceId: number) {
         throw new Error(data.detail);
     }
 
-    return data;
+    return data.data;
 }

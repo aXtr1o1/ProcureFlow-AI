@@ -105,7 +105,7 @@ export default function InvoiceValidationPage() {
   return (
 
     <main className="relative w-full bg-surface min-h-[calc(100vh-80px)] px-lg">
-      <div className="max-w-2xl mx-auto pt-6">
+      <div className="max-w-7xl mx-auto pt-6">
         <button
           type="button"
           onClick={() => router.push(`/dashboard/invoices/${params.id}`)}
@@ -117,7 +117,8 @@ export default function InvoiceValidationPage() {
           Back to Invoice
         </button>
       </div>
-      <div className="max-w-2xl mx-auto flex flex-col w-full pb-32 pt-8">
+      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 items-start pb-32 pt-4">
+        <div>
         {/* Status Header Section */}
         <div className="flex items-center justify-between py-md">
           <div className="flex flex-col">
@@ -240,6 +241,7 @@ export default function InvoiceValidationPage() {
               Line Items ({invoice.line_items.length})
             </span>
           </div>
+          
           <div className="bg-surface-container-low rounded-xl overflow-hidden shadow-sm">
             {invoice.line_items.map((item, i) => (
               <div
@@ -265,7 +267,26 @@ export default function InvoiceValidationPage() {
                 </div>
               </div>
             ))}
+            </div>
           </div>
+        </div>
+        {/* Right Column */}
+        <div className="sticky top-6 h-[calc(100vh-120px)]">
+
+          <div className="bg-white rounded-xl shadow h-full overflow-hidden">
+
+            <div className="px-4 py-3 border-b font-semibold">
+              Original Invoice
+            </div>
+
+            <iframe
+              src={`${process.env.NEXT_PUBLIC_API_URL}/invoices/${invoice.blob_name}`}
+              title="Original Invoice"
+              className="w-full h-[800px] border-0"
+            />
+
+          </div>
+
         </div>
       </div>
 
