@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "AI Invoice to PO Automation",
+  title: "ProcureFlow AI",
   description: "AI-powered invoice to purchase order automation",
 };
 

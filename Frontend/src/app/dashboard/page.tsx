@@ -197,7 +197,7 @@ export default function DashboardPage() {
                 </h2>
               </div>
 
-              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
+              {/* <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
                 <p className="font-label-md text-label-md text-on-surface-variant">
                   Avg. Time
                 </p>
@@ -205,7 +205,7 @@ export default function DashboardPage() {
                 <h2 className="mt-2 text-3xl font-bold text-primary">
                   {stats.avgTime}
                 </h2>
-              </div>
+              </div> */}
             </div>
           </section>
 
