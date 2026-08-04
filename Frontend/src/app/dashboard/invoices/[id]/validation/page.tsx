@@ -300,29 +300,7 @@ export default function InvoiceValidationPage() {
     {/* Buttons */}
     <div className="flex gap-md">
 
-      {/* Flag */}
-      <div className="relative group flex-1">
-        <button
-          type="button"
-          onClick={() => {
-            setFlagged(true);
-            setShowFlagMessage(true);
-          }}
-          disabled={flagged}
-          className="w-full h-12 rounded-xl bg-surface-container-highest text-on-surface-variant font-title-md flex items-center justify-center gap-sm disabled:opacity-60"
-        >
-          <span className="material-symbols-outlined">
-            flag
-          </span>
-
-          {flagged ? "Flagged" : "Flag"}
-        </button>
-
-        {/* Tooltip */}
-        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-900 text-white text-xs rounded-md px-3 py-2 whitespace-nowrap shadow-lg">
-          Mark this invoice for manual review due to validation issues.
-        </div>
-      </div>
+      
 
       {/* Approval */}
       <button
