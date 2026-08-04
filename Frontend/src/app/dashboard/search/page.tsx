@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/invoices";
 import {
@@ -98,23 +98,25 @@ export default function InvoiceSearchPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadInvoices = async () => {
-      try {
-        const response = await getInvoices();
-        setResults(Array.isArray(response?.data) ? response.data : []);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    void loadInvoices();
+  const loadInvoices = useCallback(async () => {
+    try {
+      const response = await getInvoices();
+      setResults(Array.isArray(response?.data) ? response.data : []);
+    } catch (err) {
+      console.error(err);
+      setResults([]);
+      setError(err instanceof Error ? err.message : "Failed to load invoices.");
+    }
   }, []);
+
+  useEffect(() => {
+    void loadInvoices();
+  }, [loadInvoices]);
 
   const filteredResults = useMemo(() => {
     return results.filter((inv) => {
       if (activeChip === "pending_approval") {
-        return inv.processing_status === "Approval Pending";
+        return inv.processing_status === "Validation Completed";
       }
       if (activeChip === "high_value") {
         return Number(inv.total_amount ?? 0) >= 2000;
@@ -132,14 +134,23 @@ export default function InvoiceSearchPage() {
   }, [results, activeChip]);
 
   const searchInvoices = async (term: string) => {
-    if (!term.trim() || loading) return;
+    if (loading) return;
 
     setLoading(true);
     setError(null);
     setSelectedId(null);
+    setActiveChip("all");
 
     try {
       const trimmed = term.trim();
+      if (!trimmed) {
+        await loadInvoices();
+        if (recent.length === 0) {
+          setRecent(DEFAULT_RECENT);
+        }
+        return;
+      }
+
       const response = await searchInvoice(trimmed);
       setResults(Array.isArray(response?.results) ? response.results : []);
 
@@ -194,7 +205,13 @@ export default function InvoiceSearchPage() {
         </p>
       </div>
 
-      <div className="flex gap-3 mb-4 max-w-2xl">
+      <form
+        className="flex gap-3 mb-4 max-w-2xl"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void searchInvoices(query);
+        }}
+      >
         <div className="relative flex-1">
           <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
             <span className="material-symbols-outlined text-primary text-[24px]">
@@ -204,25 +221,19 @@ export default function InvoiceSearchPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !loading) {
-                e.preventDefault();
-                void searchInvoices(query);
-              }
-            }}
             className="w-full h-14 pl-12 pr-4 rounded-xl bg-surface-container-lowest shadow-sm font-body-md text-on-surface"
             placeholder="Search by vendor, invoice number, customer, status..."
             type="text"
           />
         </div>
         <button
+          type="submit"
           disabled={loading}
-          onClick={() => void searchInvoices(query)}
           className="px-6 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? "Searching..." : "Search"}
         </button>
-      </div>
+      </form>
 
       <div className="flex gap-sm overflow-x-auto pb-2 mb-8">
         {CHIPS.map((chip) => (
