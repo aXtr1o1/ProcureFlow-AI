@@ -114,7 +114,7 @@ export default function InvoiceSearchPage() {
   const filteredResults = useMemo(() => {
     return results.filter((inv) => {
       if (activeChip === "pending_approval") {
-        return inv.processing_status === "Approval Pending";
+        return inv.processing_status === "Validation Completed";
       }
       if (activeChip === "high_value") {
         return Number(inv.total_amount ?? 0) >= 2000;
