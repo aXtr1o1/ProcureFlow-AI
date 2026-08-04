@@ -199,25 +199,8 @@ export default function SummaryPage() {
             className="bg-white rounded-lg px-4 py-2.5 shadow-sm font-body-md text-body-md text-on-surface border-none focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={generating}
-          className="w-full sm:w-auto bg-primary text-on-primary font-title-md text-title-md px-8 py-3 rounded-xl flex items-center justify-center gap-2 shadow-md active:scale-95 transition-transform disabled:opacity-70"
-        >
-          <span
-            className={`material-symbols-outlined text-[20px] ${
-              generating ? "animate-spin" : ""
-            }`}
-          >
-            {generating ? "sync" : generated ? "check_circle" : "auto_awesome"}
-          </span>
-          {generating
-            ? "Analyzing Data..."
-            : generated
-            ? "Summary Updated"
-            : "Generate Summary"}
-        </button>
+        
+        
       </div>
 
       {inRange.length === 0 ? (
