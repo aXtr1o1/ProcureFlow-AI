@@ -37,10 +37,11 @@ class SummaryService:
         )
 
         prompt = f"""
-        You are an invoice analysis assistant.
+        You are a senior finance analyst.
 
-        Generate a professional summary.
+        Generate an executive summary for the following invoice.
 
+        Invoice Details:
         Invoice Number: {invoice.invoice_number}
         Vendor: {invoice.vendor_name}
         Customer: {invoice.customer_name}
@@ -48,18 +49,20 @@ class SummaryService:
         Currency: {invoice.currency}
         Subtotal: {invoice.subtotal}
         Tax: {invoice.tax}
-        Total: {invoice.total_amount}
+        Total Amount: {invoice.total_amount}
 
         Line Items:
         {line_items}
 
-        Generate:
-        1. Vendor overview
-        2. Invoice purpose
-        3. Financial summary
-        4. Important observations
+        Write a professional executive summary.
 
-        Keep the response under 150 words.
+        Requirements:
+        - Write in one paragraph.
+        - Do NOT use numbering.
+        - Do NOT use bullet points.
+        - Mention the vendor, invoice purpose, financial highlights and any important observations.
+        - Keep the response under 120 words.
+        - Use formal business language suitable for finance managers.
         """
 
         openai_service = AzureOpenAIService()

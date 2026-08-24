@@ -67,7 +67,7 @@ export default function InvoiceSearchPage() {
         try {
             const response = await getInvoices();
             setInvoices(response.data);
-            setResults(response.data);
+            setResults([]); // Don't display results initially
             console.log("Invoices:", response.data);
         } catch (err) {
             console.error(err);

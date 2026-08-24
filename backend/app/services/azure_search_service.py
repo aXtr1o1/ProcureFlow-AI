@@ -6,14 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 
-
 class AzureSearchService:
-    """
-    Service responsible for querying Azure AI Search.
-    """
 
-    def __init__(self, db: Session):
-        self.db = db
+    def __init__(self):
 
         self.client = SearchClient(
             endpoint=settings.AZURE_SEARCH_ENDPOINT,
@@ -51,8 +46,9 @@ class AzureSearchService:
     ) -> List[dict]:
 
         results = self.client.search(
-            search_text=invoice_number,
-            top=5
+            search_text="*",
+            filter=f"invoice_number eq '{invoice_number}'",
+            top=1
         )
 
         return [

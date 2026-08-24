@@ -65,6 +65,10 @@ export default function SummaryPage() {
 });
   }, [invoices, startDate, endDate]);
 
+  useEffect(() => {
+    setSelected(new Set(inRange.map((invoice) => invoice.id)));
+  }, [inRange]);
+
   const stats = useMemo(() => {
     const total = inRange.length;
     const totalAmount = inRange.reduce((s, i) => s + i.total_amount, 0);
@@ -108,14 +112,14 @@ export default function SummaryPage() {
 
         const invoiceId = [...selected][0];
 
+        console.log("Generating summary for invoice:", invoiceId);
+
         const response = await generateSummary(invoiceId);
 
-        console.log(response);
+        console.log("Summary Response:", response);
 
         setSummary(response.summary);
-
         setGenerated(true);
-
     } catch (err: any) {
 
         alert(err.message);
@@ -139,7 +143,7 @@ export default function SummaryPage() {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(insightText);
+      await navigator.clipboard.writeText(summary || insightText);
       setCopyState("copied");
       setTimeout(() => setCopyState("idle"), 2000);
     } catch {
@@ -178,7 +182,11 @@ export default function SummaryPage() {
           <input
             type="date"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => {
+              setStartDate(e.target.value);
+              setSummary("");
+              setGenerated(false);
+          }}
             className="bg-white rounded-lg px-4 py-2.5 shadow-sm font-body-md text-body-md text-on-surface border-none focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
@@ -189,7 +197,11 @@ export default function SummaryPage() {
           <input
             type="date"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            onChange={(e) => {
+              setEndDate(e.target.value);
+              setSummary("");
+              setGenerated(false);
+          }}
             className="bg-white rounded-lg px-4 py-2.5 shadow-sm font-body-md text-body-md text-on-surface border-none focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
@@ -333,7 +345,11 @@ export default function SummaryPage() {
                     AI-Generated Insights
                   </h3>
                   <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">
-                    {summary || insightText}
+                    {summary ? (
+                        summary
+                    ) : (
+                        "Click 'Generate Summary' to generate AI insights."
+                    )}
                   </p>
                 </div>
               </div>

@@ -48,6 +48,9 @@ def chat(request: ChatRequest):
         }
 
     except Exception as e:
+
+        print("Azure OpenAI Error:", e)
+
         raise HTTPException(
             status_code=500,
             detail=str(e)

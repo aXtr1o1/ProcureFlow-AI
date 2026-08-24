@@ -180,7 +180,7 @@ export default function InvoiceValidationPage() {
                 Amount Due
               </span>
               <span className="font-title-md text-title-md text-on-surface">
-                ${invoice.total_amount.toFixed(2)}
+                {invoice.currency} {invoice.total_amount.toFixed(2)}
               </span>
             </div>
             <div className="flex flex-col text-right">

@@ -276,10 +276,7 @@ const confirmReject = async () => {
               </span>
               <div className="flex items-baseline gap-xs">
                 <span className="font-display-lg text-display-lg text-on-background tracking-tight">
-                  ${invoice.total_amount?.toFixed(2) ?? "0.00"}
-                </span>
-                <span className="font-body-sm text-body-sm text-on-surface-variant">
-                  {invoice.currency}
+                  {invoice.currency} {invoice.total_amount?.toFixed(2) ?? "0.00"}
                 </span>
               </div>
             </div>
@@ -328,8 +325,8 @@ const confirmReject = async () => {
               >
                 <p><strong>Description:</strong> {item.description}</p>
                 <p><strong>Qty:</strong> {item.quantity}</p>
-                <p><strong>Unit Price:</strong> {item.unit_price}</p>
-                <p><strong>Amount:</strong> {item.amount}</p>
+                <p><strong>Unit Price:</strong> {invoice.currency} {item.unit_price}</p>
+                <p><strong>Amount:</strong> {invoice.currency} {item.amount}</p>
               </div>
             ))}
           </div>

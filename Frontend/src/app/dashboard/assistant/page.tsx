@@ -1,4 +1,5 @@
 "use client";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -62,7 +63,7 @@ export default function AssistantPage() {
         },
       ]);
     } catch (err) {
-      console.error(err);
+      console.error("Assistant Error:", err);
     }
   };
 
@@ -95,30 +96,38 @@ export default function AssistantPage() {
   setTyping(true);
 
   try {
-    const response = await fetch(
-      "http://localhost:8000/azure-openai/chat",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: trimmed,
-        }),
-      }
-    );
+    const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-    const data = await response.json();
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        role: "bot",
-        text: data.response,
-        time: timeNow(),
+  const response = await fetch(
+    `${API_URL}/azure-openai/chat`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    ]);
+      body: JSON.stringify({
+        message: trimmed,
+      }),
+    }
+  );
+
+  const data = await response.json();
+
+  console.log("Assistant Response:", data);
+
+  if (!response.ok) {
+      throw new Error(data.detail || "AI Assistant failed");
+  }
+
+  setMessages((prev) => [
+    ...prev,
+    {
+      id: crypto.randomUUID(),
+      role: "bot",
+      text: data.response,
+      time: timeNow(),
+    },
+  ]);
   } catch (err) {
     console.error(err);
 

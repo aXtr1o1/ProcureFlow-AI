@@ -25,52 +25,57 @@ const STATUS_TO_STEP: Record<string, number> = {
     Uploaded: 0,
     "AI Processing": 1,
     "OCR Extraction": 2,
-    "OCR Completed": 3,
+    "Validation Processing": 3,
     "Validation Completed": 3,
-    "PO Completed": 3,
-    Rejected: 3,
+    "PO Generated": 4,
+    Rejected: 4,
 };
 
-const STEPS: Step[] = [
+const STEPS = [
   {
     id: 1,
     title: "Invoice Uploaded",
-    description: "File ready for analysis",
+    description: "Invoice uploaded successfully",
   },
   {
     id: 2,
     title: "AI Processing",
-    description: "Identifying document structure",
+    description: "Analyzing document",
   },
   {
     id: 3,
     title: "OCR Extraction",
-    description: "Converting pixels to financial data",
+    description: "Extracting invoice fields",
   },
   {
     id: 4,
-    title: "Validation & PO Match",
-    description: "Ensuring policy compliance",
+    title: "Validation",
+    description: "Validating invoice",
+  },
+  {
+    id: 5,
+    title: "PO Generation",
+    description: "Generating purchase order",
   },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
   Uploaded: "Uploaded",
-  Matched: "Matched",
-  "Review Required": "Review Required",
-  "OCR Completed": "OCR Completed",
+  "AI Processing": "AI Processing",
+  "OCR Extraction": "OCR Extraction",
+  "Validation Processing": "Validation Processing",
   "Validation Completed": "Validation Completed",
-  "PO Completed": "PO Completed",
+  "PO Generated": "PO Generated",
   Rejected: "Rejected",
 };
 
 const STATUS_COLOR: Record<string, string> = {
   Uploaded: "text-primary",
-  Matched: "text-green-700",
-  "Review Required": "text-yellow-700",
-  "OCR Completed": "text-blue-600",
+  "AI Processing": "text-blue-600",
+  "OCR Extraction": "text-indigo-600",
+  "Validation Processing": "text-orange-600",
   "Validation Completed": "text-green-700",
-  "PO Completed": "text-indigo-700",
+  "PO Generated": "text-green-700",
   Rejected: "text-error",
 };
 
@@ -91,24 +96,29 @@ export default function DashboardPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const updateSystemStatus = (status: string) => {
+  const updateSystemStatus = async (status: string) => {
 
-  const currentStep = STATUS_TO_STEP[status] ?? 0;
+    const currentStep = STATUS_TO_STEP[status] ?? 0;
+
+    for (let i = 0; i <= currentStep; i++) {
+
+        setStepStates(
+            STEPS.map((_, index) => {
+                if (index < i) return "done";
+                if (index === i) return "active";
+                return "pending";
+            })
+        );
+
+        await new Promise(resolve => setTimeout(resolve, 900));
+    }
 
     setStepStates(
-      STEPS.map((_, index) => {
-
-        if (index < currentStep)
-          return "done";
-
-        if (index === currentStep)
-          return "active";
-
-        return "pending";
-
-      })
+        STEPS.map((_, index) =>
+            index <= currentStep ? "done" : "pending"
+        )
     );
-  };
+};
 
   const refreshRecent = useCallback(async () => {
       try {
@@ -208,7 +218,7 @@ export default function DashboardPage() {
                               setRunning(false);
                           }
 
-                      }, 2000);
+                      }, 500);
 
                     }
 

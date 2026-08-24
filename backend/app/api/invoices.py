@@ -309,9 +309,6 @@ async def analyze_invoice(
                     detail=f"Invalid invoice. Missing {field}."
                 )
 
-        # Analyze the invoice
-        result = document_service.analyze_invoice(file_bytes)
-
         # Store extracted fields in OCR Text folder
         ocr_blob = blob_service.upload_ocr_data(
             document_id=document_id,
@@ -346,11 +343,6 @@ async def analyze_invoice(
             file=file
         )
 
-        ocr_blob = blob_service.upload_ocr_data(
-            document_id=document_id,
-            extracted_fields=result
-        )
-
         # Continue with saving
         invoice_service = InvoiceService(db)
 
@@ -373,18 +365,28 @@ async def analyze_invoice(
             blob_url=upload_result["blob_url"],
             ocr_blob=ocr_blob
         )
+        invoice.processing_status = "Uploaded"
+
+        invoice_service.save_status_log(
+            invoice=invoice,
+            status="Uploaded",
+            remarks="Invoice uploaded successfully."
+        )
+
+        db.commit()
+        db.refresh(invoice)
 
         invoice_service.save_line_items(
             invoice=invoice,
             line_items=result["line_items"]
         )
 
-        invoice.processing_status = "OCR Completed"
+        invoice.processing_status = "Validation Completed"
 
         invoice_service.save_status_log(
             invoice=invoice,
-            status="OCR Completed",
-            remarks="OCR extraction completed successfully."
+            status="Validation Completed",
+            remarks="Invoice validation completed."
         )
 
         db.commit()
