@@ -98,8 +98,17 @@ export async function analyzeInvoice(file: File) {
 
   const data = await response.json();
 
+  // Duplicate is returned as 409 with a structured body — surface it to the UI
+  if (data?.duplicate === true || data?.processing_status === "Duplicate") {
+    return data;
+  }
+
   if (!response.ok) {
-    throw new Error(data.detail);
+    const detail = data.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((item: { msg?: string }) => item.msg || String(item)).join(", ")
+      : detail || "Invoice analysis failed.";
+    throw new Error(message);
   }
 
   return data;
@@ -108,10 +117,12 @@ export async function analyzeInvoice(file: File) {
 export async function getInvoices() {
   const token = localStorage.getItem("access_token");
 
-  const response = await fetch(`${API_URL}/invoices`, {
+  // Trailing slash avoids FastAPI's 307 redirect from /invoices -> /invoices/
+  const response = await fetch(`${API_URL}/invoices/`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
+    cache: "no-store",
   });
 
   const data = await response.json();
@@ -120,10 +131,23 @@ export async function getInvoices() {
   console.log("Response:", data);
 
   if (!response.ok) {
-    throw new Error(data.detail || "Failed to fetch invoices");
+    const detail = data.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((item: { msg?: string }) => item.msg || String(item)).join(", ")
+      : detail || "Failed to fetch invoices";
+    throw new Error(message);
   }
 
-  return data;
+  // Normalize so callers always get an array
+  if (Array.isArray(data)) {
+    return { success: true, count: data.length, data };
+  }
+
+  return {
+    success: Boolean(data?.success ?? true),
+    count: data?.count ?? (Array.isArray(data?.data) ? data.data.length : 0),
+    data: Array.isArray(data?.data) ? data.data : [],
+  };
 }
 
 export async function getInvoice(id: number | string) {
@@ -185,7 +209,27 @@ export async function getApprovalDetails(id: number | string) {
 
 export async function approveInvoice(
     id: number | string,
-    approved_by: string
+    approved_by: string,
+    invoiceEdits?: {
+        invoice_number?: string;
+        vendor_name?: string;
+        vendor_address?: string;
+        customer_name?: string;
+        invoice_date?: string;
+        due_date?: string;
+        purchase_order_number?: string;
+        currency?: string;
+        subtotal?: number;
+        tax?: number;
+        total_amount?: number;
+        line_items?: Array<{
+            id: number;
+            description?: string;
+            quantity?: number;
+            unit_price?: number;
+            amount?: number;
+        }>;
+    }
 ) {
     const token = localStorage.getItem("access_token");
 
@@ -199,6 +243,7 @@ export async function approveInvoice(
             },
             body: JSON.stringify({
                 approved_by,
+                invoice_edits: invoiceEdits ?? null,
             }),
         }
     );
@@ -267,19 +312,20 @@ export async function searchInvoice(query: string) {
     const token = localStorage.getItem("access_token");
 
     const response = await fetch(
-        `${API_URL}/search?query=${encodeURIComponent(query)}`,
+        `${API_URL}/search/?query=${encodeURIComponent(query)}`,
         {
             method: "GET",
             headers: {
                 Authorization: `Bearer ${token}`,
             },
+            cache: "no-store",
         }
     );
 
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error(data.detail);
+        throw new Error(data.detail || "Search failed");
     }
 
     return data;

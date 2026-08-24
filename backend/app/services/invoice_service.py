@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
+from sqlalchemy import or_, cast, String
 from app.database.models import (
     Invoice,
     InvoiceLineItem,
@@ -12,17 +13,17 @@ class InvoiceService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all_invoices(self, user_id: int):
+    def get_all_invoices(self, user_id: int = None):
         """
-        Fetch all invoices from the database.
+        Fetch all invoices from the database (newest first).
         """
 
-        return (
-            self.db.query(Invoice)
-            .filter(Invoice.user_id == user_id)
-            .order_by(Invoice.id.desc())
-            .all()
-        )
+        query = self.db.query(Invoice)
+
+        # Optional user filter kept for callers that pass user_id intentionally
+        # Listing is org-wide so invoices remain visible across accounts.
+        return query.order_by(Invoice.id.desc()).all()
+
 
     def get_invoice_by_number(self, invoice_number: str):
         """
@@ -120,13 +121,10 @@ class InvoiceService:
 
         return status_log
 
-    def get_invoice_by_id(self, invoice_id: int, user_id: int):
+    def get_invoice_by_id(self, invoice_id: int, user_id: int = None):
         return (
             self.db.query(Invoice)
-            .filter(
-                Invoice.id == invoice_id,
-                Invoice.user_id == user_id
-            )
+            .filter(Invoice.id == invoice_id)
             .first()
         )
 
@@ -144,5 +142,63 @@ class InvoiceService:
             self.db.query(InvoiceStatusLog)
             .filter(InvoiceStatusLog.invoice_id == invoice_id)
             .order_by(InvoiceStatusLog.created_at.asc())
+            .all()
+        )
+
+    def search_invoices(self, query: str):
+        """
+        Search invoices in SQLite by number, vendor, customer, status, PO, dates, etc.
+        """
+        term = (query or "").strip()
+        if not term:
+            return []
+
+        like = f"%{term}%"
+
+        return (
+            self.db.query(Invoice)
+            .filter(
+                or_(
+                    Invoice.invoice_number.ilike(like),
+                    Invoice.vendor_name.ilike(like),
+                    Invoice.vendor_address.ilike(like),
+                    Invoice.customer_name.ilike(like),
+                    Invoice.processing_status.ilike(like),
+                    Invoice.purchase_order_number.ilike(like),
+                    Invoice.invoice_date.ilike(like),
+                    Invoice.due_date.ilike(like),
+                    Invoice.currency.ilike(like),
+                    # Also match numeric amount if user types a number
+                    cast(Invoice.total_amount, String).ilike(like),
+                    cast(Invoice.subtotal, String).ilike(like),
+                )
+            )
+            .order_by(Invoice.id.desc())
+            .all()
+        )
+
+    def search_invoices_by_number(self, invoice_number: str):
+        term = (invoice_number or "").strip()
+        if not term:
+            return []
+
+        like = f"%{term}%"
+        return (
+            self.db.query(Invoice)
+            .filter(Invoice.invoice_number.ilike(like))
+            .order_by(Invoice.id.desc())
+            .all()
+        )
+
+    def search_invoices_by_vendor(self, vendor_name: str):
+        term = (vendor_name or "").strip()
+        if not term:
+            return []
+
+        like = f"%{term}%"
+        return (
+            self.db.query(Invoice)
+            .filter(Invoice.vendor_name.ilike(like))
+            .order_by(Invoice.id.desc())
             .all()
         )

@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+import os
 
 class Settings(BaseSettings):
     DATABASE_URL: str
@@ -27,6 +28,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # Display / storage currency (South African Rand)
+    DEFAULT_DISPLAY_CURRENCY: str = "ZAR"
+    FX_TO_ZAR_USD: float = 18.50
+    FX_TO_ZAR_AED: float = 5.05
+    FX_TO_ZAR_EUR: float = 20.00
+    FX_TO_ZAR_GBP: float = 23.50
+    FX_TO_ZAR_SAR: float = 4.93
+    FX_TO_ZAR_ZAR: float = 1.0
 
     class Config:
         env_file = ".env"

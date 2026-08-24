@@ -78,7 +78,7 @@ class Invoice(Base):
         back_populates="invoices"
     )
 
-    invoice_number = Column(String(100), unique=True, nullable=True)
+    invoice_number = Column(String(100), nullable=True)
 
     vendor_name = Column(String(255))
     vendor_address = Column(String(500))

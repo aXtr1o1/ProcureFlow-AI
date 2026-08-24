@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/invoices";
 import { getInvoice } from "@/services/api";
+import { formatRand } from "@/lib/currency";
 
 
 interface LineItem {
@@ -222,7 +223,7 @@ export default function InvoiceDetailsPage() {
                   Total Amount
                 </p>
                 <p className="font-headline-lg text-headline-lg text-on-surface">
-                  {invoice.currency} {invoice.total_amount.toFixed(2)}
+                  {formatRand(invoice.total_amount, invoice.currency)}
                 </p>
               </div>
             </div>
@@ -252,7 +253,7 @@ export default function InvoiceDetailsPage() {
                   Terms
                 </p>
                 <p className="font-body-md text-body-md text-on-surface font-semibold">
-                  {invoice.currency}
+                  ZAR
                 </p>
               </div>
               <div>
@@ -293,7 +294,7 @@ export default function InvoiceDetailsPage() {
                         {item.quantity}
                       </td>
                       <td className="px-4 py-3 text-right font-body-md text-body-md text-on-surface font-semibold">
-                        {invoice.currency} {item.amount.toFixed(2)}
+                        {formatRand(item.amount, invoice.currency)}
                       </td>
                     </tr>
                   ))}
@@ -306,7 +307,7 @@ export default function InvoiceDetailsPage() {
                     </td>
 
                     <td className="px-4 py-3 text-right">
-                      {invoice.currency} {invoice.subtotal.toFixed(2)}
+                      {formatRand(invoice.subtotal, invoice.currency)}
                     </td>
                   </tr>
 
@@ -319,7 +320,7 @@ export default function InvoiceDetailsPage() {
                     </td>
 
                     <td className="px-4 py-3 text-right">
-                      {invoice.currency} {securityDeposit.toFixed(2)}
+                      {formatRand(securityDeposit, invoice.currency)}
                     </td>
                   </tr>
 
@@ -332,7 +333,7 @@ export default function InvoiceDetailsPage() {
                     </td>
 
                     <td className="px-4 py-3 text-right">
-                      {invoice.currency} {invoice.tax.toFixed(2)}
+                      {formatRand(invoice.tax, invoice.currency)}
                     </td>
                   </tr>
 
@@ -345,7 +346,7 @@ export default function InvoiceDetailsPage() {
                     </td>
 
                     <td className="px-4 py-3 text-right font-title-md text-title-md text-on-surface">
-                      {invoice.currency} {invoice.total_amount.toFixed(2)}
+                      {formatRand(invoice.total_amount, invoice.currency)}
                     </td>
                   </tr>
                 </tbody>

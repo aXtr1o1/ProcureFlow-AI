@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database.database import Base, engine
 from app.database import models
-from app.api.azure_openai import router as azure_openai_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -37,7 +36,6 @@ app.include_router(matching.router)
 app.include_router(azure_openai.router)
 app.include_router(search.router)
 app.include_router(summary.router)
-app.include_router(azure_openai_router)
 
 @app.get("/")
 def root():

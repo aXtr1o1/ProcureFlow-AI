@@ -7,6 +7,7 @@ import {
     updateInvoiceStatus,
 } from "@/services/api";
 import { fmtDate } from "@/lib/invoices";
+import { formatRand } from "@/lib/currency";
 
 interface LineItem {
   id: number;
@@ -180,7 +181,7 @@ export default function InvoiceValidationPage() {
                 Amount Due
               </span>
               <span className="font-title-md text-title-md text-on-surface">
-                {invoice.currency} {invoice.total_amount.toFixed(2)}
+                {formatRand(invoice.total_amount, invoice.currency)}
               </span>
             </div>
             <div className="flex flex-col text-right">
@@ -188,7 +189,7 @@ export default function InvoiceValidationPage() {
                 Currency
               </span>
               <span className="font-body-md text-body-md text-on-surface">
-                {invoice.currency}
+                ZAR
               </span>
             </div>
           </div>
@@ -259,7 +260,7 @@ export default function InvoiceValidationPage() {
                 </div>
                 <div className="flex flex-col items-end">
                   <span className="font-body-md text-body-md text-on-surface font-semibold">
-                    {invoice.currency} {item.amount.toFixed(2)}
+                    {formatRand(item.amount, invoice.currency)}
                   </span>
                   <span className="font-label-sm text-label-sm text-on-surface-variant">
                     Qty: {item.quantity}
@@ -299,29 +300,7 @@ export default function InvoiceValidationPage() {
     {/* Buttons */}
     <div className="flex gap-md">
 
-      {/* Flag */}
-      <div className="relative group flex-1">
-        <button
-          type="button"
-          onClick={() => {
-            setFlagged(true);
-            setShowFlagMessage(true);
-          }}
-          disabled={flagged}
-          className="w-full h-12 rounded-xl bg-surface-container-highest text-on-surface-variant font-title-md flex items-center justify-center gap-sm disabled:opacity-60"
-        >
-          <span className="material-symbols-outlined">
-            flag
-          </span>
-
-          {flagged ? "Flagged" : "Flag"}
-        </button>
-
-        {/* Tooltip */}
-        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-900 text-white text-xs rounded-md px-3 py-2 whitespace-nowrap shadow-lg">
-          Mark this invoice for manual review due to validation issues.
-        </div>
-      </div>
+      
 
       {/* Approval */}
       <button

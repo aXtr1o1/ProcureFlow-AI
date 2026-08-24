@@ -1,0 +1,69 @@
+﻿{
+    "success":  true,
+    "response":  "Duplicates found\n\n1) Invoice: RP-INV-2026-5001\n   Vendor: REDEFINE\n   Date: 2026-07-23\n   Amount: AED 95066.25\n   Occurrences: 2\n\n2) Invoice: RP-INV-2026-5003\n   Vendor: REDEFINE\n   Date: 2026-07-23\n   Amount: AED 207622.5\n   Occurrences: 2\n\nNotes\n- No other duplicates detected in the provided context.\n- Use the \"Retrieved sources\" cards below for PDF / Open links to review the documents.",
+    "search_query":  "duplicate invoice number same amount same vendor same date",
+    "sources":  [
+                    {
+                        "id":  null,
+                        "azure_id":  "048e3c7e-4e01-44c3-aba9-c7e011738c6f",
+                        "invoice_number":  "RP-INV-2026-5001",
+                        "vendor_name":  "REDEFINE\nPROPERTIES",
+                        "total_amount":  null,
+                        "processing_status":  null,
+                        "blob_url":  "https://blobstorageinvoicestopo.blob.core.windows.net/blobstorageinvoicestopo/Invoices/048e3c7e-4e01-44c3-aba9-c7e011738c6f.pdf",
+                        "blob_name":  null,
+                        "score":  0.4524015,
+                        "snippet":  "Invoice Number: RP-INV-2026-5001\nVendor: REDEFINE\nPROPERTIES\nInvoice Date: 2026-07-23\nCurrency: AED\nAmount: 95066.25\n\nItems:\nQuarterly rent (Q1) - Redefine Business Bay -\nUnit 1104 Qty:1.0 Price:69375.0\nService \u0026 mainten"
+                    },
+                    {
+                        "id":  null,
+                        "azure_id":  "1bf7565e-92c9-4128-8da8-7f46364954a3",
+                        "invoice_number":  "RP-INV-2026-5003",
+                        "vendor_name":  "REDEFINE\nPROPERTIES",
+                        "total_amount":  null,
+                        "processing_status":  null,
+                        "blob_url":  "https://blobstorageinvoicestopo.blob.core.windows.net/blobstorageinvoicestopo/Invoices/1bf7565e-92c9-4128-8da8-7f46364954a3.pdf",
+                        "blob_name":  null,
+                        "score":  0.4524015,
+                        "snippet":  "Invoice Number: RP-INV-2026-5003\nVendor: REDEFINE\nPROPERTIES\nInvoice Date: 2026-07-23\nCurrency: AED\nAmount: 207622.5\n\nItems:\nQuarterly rent (Q1) - Redefine Jumeirah Villas\n- V22 Qty:1.0 Price:153750.0\nService \u0026 maintenan"
+                    },
+                    {
+                        "id":  null,
+                        "azure_id":  "32ac8cbc-9030-4544-9d27-37792828c355",
+                        "invoice_number":  "RP-INV-2026-5001",
+                        "vendor_name":  "REDEFINE\nPROPERTIES",
+                        "total_amount":  null,
+                        "processing_status":  null,
+                        "blob_url":  "https://blobstorageinvoicestopo.blob.core.windows.net/blobstorageinvoicestopo/Invoices/32ac8cbc-9030-4544-9d27-37792828c355.pdf",
+                        "blob_name":  null,
+                        "score":  0.4524015,
+                        "snippet":  "Invoice Number: RP-INV-2026-5001\nVendor: REDEFINE\nPROPERTIES\nInvoice Date: 2026-07-23\nCurrency: AED\nAmount: 95066.25\n\nItems:\nQuarterly rent (Q1) - Redefine Business Bay -\nUnit 1104 Qty:1.0 Price:69375.0\nService \u0026 mainten"
+                    },
+                    {
+                        "id":  null,
+                        "azure_id":  "4be4605e-15b2-4f79-bb16-0eea6c75b94d",
+                        "invoice_number":  "RP-INV-2026-5002",
+                        "vendor_name":  "REDEFINE\nPROPERTIES",
+                        "total_amount":  null,
+                        "processing_status":  null,
+                        "blob_url":  "https://blobstorageinvoicestopo.blob.core.windows.net/blobstorageinvoicestopo/Invoices/4be4605e-15b2-4f79-bb16-0eea6c75b94d.pdf",
+                        "blob_name":  null,
+                        "score":  0.4524015,
+                        "snippet":  "Invoice Number: RP-INV-2026-5002\nVendor: REDEFINE\nPROPERTIES\nInvoice Date: 2026-07-23\nCurrency: AED\nAmount: 105238.0\n\nItems:\nQuarterly rent (Q1) - Redefine JLT Tower -\nUnit 3208 Qty:1.0 Price:77000.0\nService \u0026 maintenanc"
+                    },
+                    {
+                        "id":  null,
+                        "azure_id":  "70ce16fc-16b3-47e2-9b3f-f51d9610cbe0",
+                        "invoice_number":  "RP-INV-2026-5003",
+                        "vendor_name":  "REDEFINE\nPROPERTIES",
+                        "total_amount":  null,
+                        "processing_status":  null,
+                        "blob_url":  "https://blobstorageinvoicestopo.blob.core.windows.net/blobstorageinvoicestopo/Invoices/70ce16fc-16b3-47e2-9b3f-f51d9610cbe0.pdf",
+                        "blob_name":  null,
+                        "score":  0.4524015,
+                        "snippet":  "Invoice Number: RP-INV-2026-5003\nVendor: REDEFINE\nPROPERTIES\nInvoice Date: 2026-07-23\nCurrency: AED\nAmount: 207622.5\n\nItems:\nQuarterly rent (Q1) - Redefine Jumeirah Villas\n- V22 Qty:1.0 Price:153750.0\nService \u0026 maintenan"
+                    }
+                ],
+    "total_sources":  5,
+    "warning":  null
+}

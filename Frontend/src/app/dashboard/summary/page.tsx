@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { fmtDate, listInvoices, type Invoice } from "@/lib/invoices";
 import { useAuth } from "@/context/AuthContext";
 import { generateSummary } from "@/services/api";
+import { formatRand, toZar } from "@/lib/currency";
 
 function startOfMonth() {
   const d = new Date();
@@ -16,8 +17,8 @@ function today() {
 }
 
 function formatCompact(n: number) {
-  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
-  return `$${n.toFixed(2)}`;
+  if (n >= 1000) return `R ${(n / 1000).toFixed(1)}k`;
+  return formatRand(n, "ZAR");
 }
 
 export default function SummaryPage() {
@@ -71,14 +72,18 @@ export default function SummaryPage() {
 
   const stats = useMemo(() => {
     const total = inRange.length;
-    const totalAmount = inRange.reduce((s, i) => s + i.total_amount, 0);
+    const totalAmount = inRange.reduce(
+      (s, i) => s + (toZar(i.total_amount, i.currency) ?? 0),
+      0,
+    );
     const approved = inRange.filter((i) => i.processing_status === "Approved").length;
     const pending = total - approved;
     const pctComplete = total === 0 ? 0 : Math.round((approved / total) * 100);
 
     const vendorTotals = new Map<string, number>();
     inRange.forEach((inv) => {
-      vendorTotals.set(inv.vendor_name, (vendorTotals.get(inv.vendor_name) ?? 0) + inv.total_amount);
+      const amt = toZar(inv.total_amount, inv.currency) ?? 0;
+      vendorTotals.set(inv.vendor_name, (vendorTotals.get(inv.vendor_name) ?? 0) + amt);
     });
     const topVendors = Array.from(vendorTotals.entries())
       .sort((a, b) => b[1] - a[1])
@@ -89,12 +94,13 @@ export default function SummaryPage() {
 
   const insightText = `During this period, ${stats.total} invoice${
     stats.total === 1 ? "" : "s"
-  } were processed with a total volume of $${stats.totalAmount.toFixed(2)}. ${
+  } were processed with a total volume of ${formatRand(stats.totalAmount, "ZAR")}. ${
     stats.approved
   } have been approved and ${stats.pending} are still moving through review. ${
     stats.topVendors.length > 0
-      ? `The top vendor by spend is ${stats.topVendors[0][0]} at $${stats.topVendors[0][1].toFixed(
-          2
+      ? `The top vendor by spend is ${stats.topVendors[0][0]} at ${formatRand(
+          stats.topVendors[0][1],
+          "ZAR",
         )}.`
       : ""
   }`;
@@ -205,25 +211,8 @@ export default function SummaryPage() {
             className="bg-white rounded-lg px-4 py-2.5 shadow-sm font-body-md text-body-md text-on-surface border-none focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={generating}
-          className="w-full sm:w-auto bg-primary text-on-primary font-title-md text-title-md px-8 py-3 rounded-xl flex items-center justify-center gap-2 shadow-md active:scale-95 transition-transform disabled:opacity-70"
-        >
-          <span
-            className={`material-symbols-outlined text-[20px] ${
-              generating ? "animate-spin" : ""
-            }`}
-          >
-            {generating ? "sync" : generated ? "check_circle" : "auto_awesome"}
-          </span>
-          {generating
-            ? "Analyzing Data..."
-            : generated
-            ? "Summary Updated"
-            : "Generate Summary"}
-        </button>
+        
+        
       </div>
 
       {inRange.length === 0 ? (
@@ -325,7 +314,7 @@ export default function SummaryPage() {
                           </span>
                         </div>
                         <span className="font-title-md text-title-md text-on-surface">
-                          ${amount.toFixed(2)}
+                          {formatRand(amount, "ZAR")}
                         </span>
                       </div>
                     ))}
@@ -410,7 +399,7 @@ export default function SummaryPage() {
                           {inv.invoice_number}
                         </p>
                         <p className="font-title-md text-title-md text-on-surface shrink-0">
-                          ${inv.total_amount.toFixed(2)}
+                          {formatRand(inv.total_amount, inv.currency)}
                         </p>
                       </div>
                       <div className="flex justify-between items-center gap-2">
