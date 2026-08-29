@@ -59,7 +59,7 @@ jobs:
             pip install --upgrade pip
 
             echo "Installing dependencies..."
-            uv pip install -r backend/requirements.txt
+            python -m pip install -r backend/requirements.txt
             cd backend
             rm invoice_po.db 
             python3 -m app.database.init_db
