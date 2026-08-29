@@ -10,8 +10,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "ProcureFlow AI",
-  description: "AI-powered invoice to purchase order automation",
+  title: "CloudGate",
+  description: "CloudGate AI-powered invoice to purchase order automation",
 };
 
 export default function RootLayout({

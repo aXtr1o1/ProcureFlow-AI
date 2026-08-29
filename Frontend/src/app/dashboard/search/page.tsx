@@ -7,7 +7,7 @@ import {
   getInvoices,
   searchInvoice,
 } from "@/services/api";
-import { formatRand } from "@/lib/currency";
+import { formatUsd } from "@/lib/currency";
 
 interface LineItem {
   id?: number;
@@ -85,7 +85,7 @@ function money(amount?: number | string | null, currency?: string) {
   if (amount === null || amount === undefined || amount === "") {
     return "—";
   }
-  return formatRand(amount, currency || "ZAR");
+  return formatUsd(amount, currency || "USD");
 }
 
 export default function InvoiceSearchPage() {
@@ -444,7 +444,7 @@ export default function InvoiceSearchPage() {
                               Currency
                             </p>
                             <p className="text-on-surface">
-                              ZAR
+                              USD
                             </p>
                           </div>
                           <div>

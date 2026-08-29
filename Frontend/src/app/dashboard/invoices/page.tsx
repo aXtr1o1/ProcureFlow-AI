@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/invoices";
 import { getInvoices } from "@/services/api";
-import { formatRand } from "@/lib/currency";
+import { formatUsd } from "@/lib/currency";
 
 interface Invoice {
   id: number;
@@ -153,7 +153,7 @@ export default function InvoicesListPage() {
               </button>
               <div className="flex items-center gap-4 shrink-0">
                 <span className="font-title-lg text-title-lg text-on-surface">
-                  {formatRand(inv.total_amount, inv.currency)}
+                  {formatUsd(inv.total_amount, inv.currency)}
                 </span>
                 <span
                   className={`font-label-md text-label-md px-3 py-1.5 rounded-full ${

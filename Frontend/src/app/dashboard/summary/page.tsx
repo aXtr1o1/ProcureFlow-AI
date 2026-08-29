@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { fmtDate, listInvoices, type Invoice } from "@/lib/invoices";
 import { useAuth } from "@/context/AuthContext";
 import { generateSummary } from "@/services/api";
-import { formatRand, toZar } from "@/lib/currency";
+import { formatUsd, toUsd } from "@/lib/currency";
 
 function startOfMonth() {
   const d = new Date();
@@ -17,8 +17,8 @@ function today() {
 }
 
 function formatCompact(n: number) {
-  if (n >= 1000) return `R ${(n / 1000).toFixed(1)}k`;
-  return formatRand(n, "ZAR");
+  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
+  return formatUsd(n, "USD");
 }
 
 export default function SummaryPage() {
@@ -69,7 +69,7 @@ export default function SummaryPage() {
   const stats = useMemo(() => {
     const total = inRange.length;
     const totalAmount = inRange.reduce(
-      (s, i) => s + (toZar(i.total_amount, i.currency) ?? 0),
+      (s, i) => s + (toUsd(i.total_amount, i.currency) ?? 0),
       0,
     );
     const approved = inRange.filter((i) => i.processing_status === "Approved").length;
@@ -78,7 +78,7 @@ export default function SummaryPage() {
 
     const vendorTotals = new Map<string, number>();
     inRange.forEach((inv) => {
-      const amt = toZar(inv.total_amount, inv.currency) ?? 0;
+      const amt = toUsd(inv.total_amount, inv.currency) ?? 0;
       vendorTotals.set(inv.vendor_name, (vendorTotals.get(inv.vendor_name) ?? 0) + amt);
     });
     const topVendors = Array.from(vendorTotals.entries())
@@ -90,13 +90,13 @@ export default function SummaryPage() {
 
   const insightText = `During this period, ${stats.total} invoice${
     stats.total === 1 ? "" : "s"
-  } were processed with a total volume of ${formatRand(stats.totalAmount, "ZAR")}. ${
+  } were processed with a total volume of ${formatUsd(stats.totalAmount, "USD")}. ${
     stats.approved
   } have been approved and ${stats.pending} are still moving through review. ${
     stats.topVendors.length > 0
-      ? `The top vendor by spend is ${stats.topVendors[0][0]} at ${formatRand(
+      ? `The top vendor by spend is ${stats.topVendors[0][0]} at ${formatUsd(
           stats.topVendors[0][1],
-          "ZAR",
+          "USD",
         )}.`
       : ""
   }`;
@@ -302,7 +302,7 @@ export default function SummaryPage() {
                           </span>
                         </div>
                         <span className="font-title-md text-title-md text-on-surface">
-                          {formatRand(amount, "ZAR")}
+                          {formatUsd(amount, "USD")}
                         </span>
                       </div>
                     ))}
@@ -383,7 +383,7 @@ export default function SummaryPage() {
                           {inv.invoice_number}
                         </p>
                         <p className="font-title-md text-title-md text-on-surface shrink-0">
-                          {formatRand(inv.total_amount, inv.currency)}
+                          {formatUsd(inv.total_amount, inv.currency)}
                         </p>
                       </div>
                       <div className="flex justify-between items-center gap-2">

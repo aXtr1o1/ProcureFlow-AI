@@ -12,7 +12,7 @@ import {
   useInvoiceProcessing,
 } from "@/context/InvoiceProcessingContext";
 import { fmtDate, type Invoice } from "@/lib/invoices";
-import { formatRand } from "@/lib/currency";
+import { formatUsd } from "@/lib/currency";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -603,7 +603,7 @@ export default function DashboardPage() {
 
                     <div className="ml-4 flex shrink-0 items-center gap-4">
                       <span className="font-body-md text-body-md text-on-surface">
-                        {formatRand(invoice.total_amount, invoice.currency)}
+                        {formatUsd(invoice.total_amount, invoice.currency)}
                       </span>
 
                       <span

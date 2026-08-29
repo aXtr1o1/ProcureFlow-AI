@@ -51,3 +51,9 @@ class InvoiceDetailResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
+
+# ==========================================================
+# Link Invoice to Purchase Order
+# ==========================================================
+class InvoicePurchaseOrderLinkRequest(BaseModel):
+    purchase_order_id: int

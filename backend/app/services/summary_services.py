@@ -1,10 +1,12 @@
 from typing import Optional
 
+from click import prompt
 from sqlalchemy.orm import Session
-from app.services.azure_openai_service import AzureOpenAIService
+from app.services.gemini_service import GeminiService
 
 from app.database.models import Invoice
 from app.services.blob_storage_service import BlobStorageService
+from app.services import gemini_service
 
 
 class SummaryService:
@@ -62,9 +64,9 @@ class SummaryService:
         Keep the response under 150 words.
         """
 
-        openai_service = AzureOpenAIService()
+        gemini_service = GeminiService()
 
-        summary_text = openai_service.chat(prompt)
+        summary_text = gemini_service.chat(prompt)
 
         summary_data = {
             "invoice_id": invoice.id,

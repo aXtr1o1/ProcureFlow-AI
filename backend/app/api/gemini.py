@@ -5,10 +5,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
-from app.services.azure_openai_service import AzureOpenAIService
+from app.services.gemini_service import GeminiService
 from app.services.azure_search_service import AzureSearchService
 from app.services.invoice_service import InvoiceService
-from app.services.currency_service import to_zar, normalize_currency_code
+from app.services.currency_service import to_usd, normalize_currency_code
 
 
 class ChatRequest(BaseModel):
@@ -16,8 +16,8 @@ class ChatRequest(BaseModel):
 
 
 router = APIRouter(
-    prefix="/azure-openai",
-    tags=["Azure OpenAI"]
+    prefix="/gemini",
+    tags=["Gemini"]
 )
 
 
@@ -63,28 +63,28 @@ def _sources_from_docs(db: Session, docs: List[dict]) -> List[Dict[str, Any]]:
         source_currency = normalize_currency_code(
             doc.get("currency")
             or (db_invoice.currency if db_invoice else None)
-            or "ZAR"
+            or "USD"
         )
         total_amount = (
             doc.get("total_amount")
             if doc.get("total_amount") is not None
             else (db_invoice.total_amount if db_invoice else None)
         )
-        total_amount_zar = (
-            to_zar(total_amount, source_currency)
+        total_amount_usd = (
+            to_usd(total_amount, source_currency)
             if total_amount is not None
             else None
         )
-        line_items_zar = []
+        line_items_usd = []
         for item in line_items:
             if not isinstance(item, dict):
                 continue
-            line_items_zar.append(
+            line_items_usd.append(
                 {
                     "description": item.get("description"),
                     "quantity": item.get("quantity"),
-                    "unit_price": to_zar(item.get("unit_price"), source_currency),
-                    "amount": to_zar(
+                    "unit_price": to_usd(item.get("unit_price"), source_currency),
+                    "amount": to_usd(
                         item.get("amount")
                         if item.get("amount") is not None
                         else item.get("unit_price"),
@@ -115,9 +115,9 @@ def _sources_from_docs(db: Session, docs: List[dict]) -> List[Dict[str, Any]]:
                     or ""
                 )
                 or None,
-                "currency": "ZAR",
+                "currency": "USD",
                 "original_currency": source_currency,
-                "total_amount": total_amount_zar,
+                "total_amount": total_amount_usd,
                 "processing_status": str(
                     doc.get("processing_status")
                     or (db_invoice.processing_status if db_invoice else "")
@@ -127,7 +127,7 @@ def _sources_from_docs(db: Session, docs: List[dict]) -> List[Dict[str, Any]]:
                 "blob_url": blob_url,
                 "blob_name": blob_name,
                 "score": doc.get("score"),
-                "line_items": line_items_zar,
+                "line_items": line_items_usd,
                 "snippet": content[:280],
             }
         )
@@ -137,11 +137,11 @@ def _sources_from_docs(db: Session, docs: List[dict]) -> List[Dict[str, Any]]:
 
 @router.get("/test")
 def test_connection():
-    service = AzureOpenAIService()
+    service = GeminiService()
 
     try:
         response = service.chat(
-            "Reply with exactly: Azure OpenAI connection successful."
+            "Reply with exactly: Gemini connection successful."
         )
         return {
             "success": True,
@@ -165,7 +165,7 @@ def chat(
     2) Azure AI Search retrieves documents (including blob_url)
     3) LLM answers using the retrieved information
     """
-    openai_service = AzureOpenAIService()
+    gemini_service = GeminiService()
     search_service = AzureSearchService(db)
 
     message = (request.message or "").strip()
@@ -179,7 +179,7 @@ def chat(
     try:
         # 1) Optimize query (fall back to original message on failure)
         try:
-            search_query = openai_service.rewrite_search_query(message)
+            search_query = gemini_service.rewrite_search_query(message)
         except Exception as rewrite_error:
             search_query = message
             search_error = f"Query rewrite skipped: {rewrite_error}"
@@ -193,22 +193,22 @@ def chat(
             search_error = str(search_exc)
             documents = []
 
-        # Normalize retrieved docs to ZAR so the LLM cites Rand amounts
-        zar_documents: List[dict] = []
+        # Normalize retrieved docs to USD so the LLM cites dollar amounts.
+        usd_documents: List[dict] = []
         for doc in documents:
-            currency = normalize_currency_code(doc.get("currency") or "ZAR")
+            currency = normalize_currency_code(doc.get("currency") or "USD")
             converted = dict(doc)
             converted["original_currency"] = currency
-            converted["currency"] = "ZAR"
+            converted["currency"] = "USD"
             if doc.get("total_amount") is not None:
-                converted["total_amount"] = to_zar(doc.get("total_amount"), currency)
+                converted["total_amount"] = to_usd(doc.get("total_amount"), currency)
             line_items = []
             for item in doc.get("line_items") or []:
                 if not isinstance(item, dict):
                     continue
                 line = dict(item)
-                line["unit_price"] = to_zar(item.get("unit_price"), currency)
-                line["amount"] = to_zar(
+                line["unit_price"] = to_usd(item.get("unit_price"), currency)
+                line["amount"] = to_usd(
                     item.get("amount")
                     if item.get("amount") is not None
                     else item.get("unit_price"),
@@ -216,18 +216,18 @@ def chat(
                 )
                 line_items.append(line)
             converted["line_items"] = line_items
-            zar_documents.append(converted)
-        documents = zar_documents
+            usd_documents.append(converted)
+        documents = usd_documents
 
         # 3) Grounded answer (or plain chat if no docs)
         if documents:
-            answer = openai_service.answer_with_context(
+            answer = gemini_service.answer_with_context(
                 question=message,
                 documents=documents,
                 search_query=search_query,
             )
         else:
-            answer = openai_service.chat(
+            answer = gemini_service.chat(
                 f"""The user asked: {message}
 
 Azure AI Search returned no usable documents.

@@ -1,264 +1,409 @@
 import uuid
 from typing import Optional, List
+
 from sqlalchemy.orm import Session
-from app.services.blob_storage_service import BlobStorageService
+
 from app.database.models import (
-    Invoice,
-    InvoiceStatusLog,
-    PORecord
+    PurchaseRequisition,
+    ProcurementPurchaseOrder,
+    ProcurementPurchaseOrderLine,
+    PurchaseOrderApproval,
+    PurchaseOrderVendorResponse,
 )
+
+from app.services.audit_service import AuditService
 
 
 class PurchaseOrderService:
     """
     Service responsible for Purchase Order operations.
+
+    PO lifecycle:
+
+        Created
+            ↓
+        Approval Pending
+            ↓
+        Approved
+            ↓
+        Sent
+            ↓
+        Acknowledged
+            ↓
+        Closed
+
+    Rejection paths:
+
+        Approval Pending → Rejected
+        Sent → Vendor Rejected
+
+    Cancellation:
+
+        Created / Approved / Acknowledged → Cancelled
     """
 
     def __init__(self, db: Session):
         self.db = db
 
-    def generate_purchase_order(
-        self,
-        invoice_id: int
-    ):
-        invoice = (
-            self.db.query(Invoice)
-            .filter(Invoice.id == invoice_id)
-            .first()
-        )
+    # ==========================================================
+    # Get Purchase Order by Number
+    # ==========================================================
 
-        if invoice is None:
-            return None
-
-        existing_po = self.get_purchase_order_by_invoice(
-            invoice_id
-        )
-
-        if existing_po:
-            raise ValueError(
-                "Purchase Order already exists."
-            )
-
-        po_number = f"PO-{uuid.uuid4().hex[:8].upper()}"
-
-        po_data = {
-
-        "invoice_id": invoice.id,
-
-        "invoice_number": invoice.invoice_number,
-
-        "po_number": po_number,
-
-        "vendor_name": invoice.vendor_name,
-
-        "customer_name": invoice.customer_name,
-
-        "currency": invoice.currency,
-
-        "po_date": invoice.invoice_date,
-
-        "subtotal": invoice.subtotal,
-
-        "tax": invoice.tax,
-
-        "total_amount": invoice.total_amount,
-
-        "generated_by": "System",
-
-        "status": "Generated"
-
-    }
-
-        blob_service = BlobStorageService()
-
-        blob = blob_service.upload_po_record(
-            document_id=str(invoice.id),
-            po_record=po_data
-        )
-
-        po_data["blob_name"] = blob["blob_name"]
-
-        po_data["blob_url"] = blob["blob_url"]
-
-        purchase_order = self.create_purchase_order(
-            po_data
-        )
-
-        invoice.processing_status = "PO Generated"
-
-        status_log = InvoiceStatusLog(
-            invoice_id=invoice.id,
-            status="PO Generated",
-            remarks="Purchase Order generated successfully.",
-            updated_by="System"
-        )
-
-        self.db.add(status_log)
-
-        try:
-            self.db.commit()
-
-            self.db.refresh(invoice)
-
-            self.db.refresh(purchase_order)
-
-        except Exception:
-            self.db.rollback()
-            raise
-
-        return purchase_order
-
-    # --------------------------------------------------
-    # Get PO by PO Number
-    # --------------------------------------------------
     def get_purchase_order_by_number(
         self,
-        po_number: str
-    ) -> Optional[PORecord]:
+        po_number: str,
+    ) -> Optional[ProcurementPurchaseOrder]:
 
         if not po_number:
             return None
 
         return (
-            self.db.query(PORecord)
-            .filter(PORecord.po_number == po_number)
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.po_number == po_number
+            )
             .first()
         )
 
-    def get_purchase_order_by_invoice(
-        self,
-        invoice_id: int
-    ) -> Optional[PORecord]:
-
-        return (
-            self.db.query(PORecord)
-            .filter(PORecord.invoice_id == invoice_id)
-            .first()
-        )
-
-    # --------------------------------------------------
-    # Get PO by Customer Name
-    # (Fallback when invoice doesn't contain PO Number)
-    # --------------------------------------------------
-    def get_purchase_order_by_customer(
-        self,
-        customer_name: str
-    ) -> Optional[PORecord]:
-
-        if not customer_name:
-            return None
-
-        return (
-            self.db.query(PORecord)
-            .filter(PORecord.customer_name == customer_name)
-            .first()
-        )
-
-    # --------------------------------------------------
-    # Get PO by Vendor Name
-    # --------------------------------------------------
-    def get_purchase_order_by_vendor(
-        self,
-        vendor_name: str
-    ) -> List[PORecord]:
-
-        return (
-            self.db.query(PORecord)
-            .filter(PORecord.vendor_name == vendor_name)
-            .all()
-        )
-
-    # --------------------------------------------------
+    # ==========================================================
     # Get All Purchase Orders
-    # --------------------------------------------------
-    def get_all_purchase_orders(self) -> List[PORecord]:
+    # ==========================================================
+
+    def get_all_purchase_orders(
+        self,
+    ) -> List[ProcurementPurchaseOrder]:
 
         return (
-            self.db.query(PORecord)
-            .order_by(PORecord.id.desc())
+            self.db.query(ProcurementPurchaseOrder)
+            .order_by(
+                ProcurementPurchaseOrder.id.desc()
+            )
             .all()
         )
 
-    def purchase_order_exists(
-        self,
-        po_number: str
-    ) -> bool:
+    # ==========================================================
+    # Get Purchase Order by ID
+    # ==========================================================
 
-        return (
-            self.db.query(PORecord)
-            .filter(PORecord.po_number == po_number)
+    def _get_required(
+        self,
+        po_id: int,
+    ) -> ProcurementPurchaseOrder:
+
+        purchase_order = (
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.id == po_id
+            )
             .first()
-            is not None
         )
 
-    # --------------------------------------------------
-    # Create Purchase Order
-    # --------------------------------------------------
-    def create_purchase_order(
-        self,
-        po_data: dict
-    ) -> PORecord:
-
-        if self.purchase_order_exists(po_data.get("po_number")):
-            raise ValueError("Purchase Order already exists.")
-
-        purchase_order = PORecord(
-            invoice_id=po_data.get("invoice_id"),
-            invoice_number=po_data.get("invoice_number"),
-            po_number=po_data.get("po_number"),
-            vendor_name=po_data.get("vendor_name"),
-            customer_name=po_data.get("customer_name"),
-            currency=po_data.get("currency"),
-            po_date=po_data.get("po_date"),
-            subtotal=po_data.get("subtotal"),
-            tax=po_data.get("tax"),
-            total_amount=po_data.get("total_amount"),
-            blob_name=po_data.get("blob_name"),
-            blob_url=po_data.get("blob_url"),
-            generated_by=po_data.get("generated_by", "System"),
-            status=po_data.get("status", "Generated")
-        )
-
-        self.db.add(purchase_order)
+        if purchase_order is None:
+            raise ValueError(
+                "Purchase Order not found."
+            )
 
         return purchase_order
 
-    # --------------------------------------------------
-    # Update Purchase Order Status
-    # --------------------------------------------------
+    # ==========================================================
+    # Purchase Order Status Transition
+    # ==========================================================
+
     def update_status(
         self,
         po_id: int,
-        status: str
-    ) -> Optional[PORecord]:
+        status: str,
+        user_id: int,
+    ) -> Optional[ProcurementPurchaseOrder]:
 
         purchase_order = (
-            self.db.query(PORecord)
-            .filter(PORecord.id == po_id)
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.id == po_id
+            )
             .first()
         )
 
         if purchase_order is None:
             return None
 
+        allowed_transitions = {
+            "Created": {
+                "Approval Pending",
+                "Cancelled",
+            },
+
+            "Approval Pending": {
+                "Approved",
+                "Rejected",
+            },
+
+            "Approved": {
+                "Sent",
+                "Cancelled",
+            },
+
+            "Sent": {
+                "Acknowledged",
+                "Vendor Rejected",
+            },
+
+            "Acknowledged": {
+                "Closed",
+                "Cancelled",
+            },
+
+            "Vendor Rejected": {
+                "Cancelled",
+            },
+
+            "Rejected": set(),
+
+            "Closed": set(),
+
+            "Cancelled": set(),
+        }
+
+        current_status = purchase_order.status
+
+        allowed_statuses = allowed_transitions.get(
+            current_status,
+            set(),
+        )
+
+        if status not in allowed_statuses:
+            raise ValueError(
+                "Invalid Purchase Order status transition: "
+                f"{current_status} -> {status}"
+            )
+
         purchase_order.status = status
 
         self.db.commit()
         self.db.refresh(purchase_order)
 
+        AuditService(self.db).log(
+            user_id=user_id,
+            action="STATUS_UPDATE",
+            module="Purchase Order",
+            status="SUCCESS",
+            message=(
+                f"Purchase Order {purchase_order.po_number} "
+                f"status changed from "
+                f"{current_status} to {status}."
+            ),
+        )
+
         return purchase_order
 
-    # --------------------------------------------------
+    # ==========================================================
+    # Submit PO for Approval
+    # ==========================================================
+
+    def submit_for_approval(
+        self,
+        po_id: int,
+        user_id: int,
+    ) -> ProcurementPurchaseOrder:
+
+        return self._transition(
+            po_id=po_id,
+            target_status="Approval Pending",
+            user_id=user_id,
+            action="SUBMIT",
+            message="Purchase Order submitted for approval.",
+        )
+
+    # ==========================================================
+    # Approve / Reject PO
+    # ==========================================================
+
+    def decide(
+        self,
+        po_id: int,
+        user_id: int,
+        decision: str,
+        remarks: Optional[str],
+    ) -> ProcurementPurchaseOrder:
+
+        if decision not in {
+            "Approved",
+            "Rejected",
+        }:
+            raise ValueError(
+                "Decision must be Approved or Rejected."
+            )
+
+        purchase_order = self._get_required(
+            po_id
+        )
+
+        if purchase_order.status != "Approval Pending":
+            raise ValueError(
+                "Only Purchase Orders pending approval "
+                "can be approved or rejected."
+            )
+
+        approval = PurchaseOrderApproval(
+            purchase_order_id=purchase_order.id,
+            reviewer_id=user_id,
+            decision=decision,
+            remarks=remarks,
+        )
+
+        self.db.add(approval)
+        self.db.flush()
+
+        return self._transition(
+            po_id=po_id,
+            target_status=decision,
+            user_id=user_id,
+            action=decision.upper(),
+            message=(
+                remarks
+                or f"Purchase Order {decision.lower()}."
+            ),
+        )
+
+    # ==========================================================
+    # Send Approved PO to Vendor
+    # ==========================================================
+
+    def send_to_vendor(
+        self,
+        po_id: int,
+        user_id: int,
+    ) -> ProcurementPurchaseOrder:
+
+        purchase_order = self._get_required(
+            po_id
+        )
+
+        if purchase_order.status != "Approved":
+            raise ValueError(
+                "Only approved Purchase Orders "
+                "can be sent to the vendor."
+            )
+
+        return self._transition(
+            po_id=po_id,
+            target_status="Sent",
+            user_id=user_id,
+            action="SEND_TO_VENDOR",
+            message="Purchase Order sent to vendor.",
+        )
+
+    # ==========================================================
+    # Record Vendor Response
+    # ==========================================================
+
+    def record_vendor_response(
+        self,
+        po_id: int,
+        response: str,
+        remarks: Optional[str],
+        user_id: int,
+    ) -> ProcurementPurchaseOrder:
+
+        if response not in {
+            "Vendor Accepted",
+            "Vendor Rejected",
+        }:
+            raise ValueError(
+                "Vendor response must be accepted or rejected."
+            )
+
+        purchase_order = self._get_required(
+            po_id
+        )
+
+        if purchase_order.status != "Sent":
+            raise ValueError(
+                "Only sent Purchase Orders "
+                "can receive a vendor response."
+            )
+
+        vendor_response = PurchaseOrderVendorResponse(
+            purchase_order_id=purchase_order.id,
+            response=response,
+            remarks=remarks,
+            recorded_by_id=user_id,
+        )
+
+        self.db.add(vendor_response)
+        self.db.flush()
+
+        if response == "Vendor Accepted":
+            target_status = "Acknowledged"
+            message = (
+                "Vendor accepted the Purchase Order."
+            )
+        else:
+            target_status = "Vendor Rejected"
+            message = (
+                "Vendor rejected the Purchase Order."
+            )
+
+        return self._transition(
+            po_id=po_id,
+            target_status=target_status,
+            user_id=user_id,
+            action="VENDOR_RESPONSE",
+            message=remarks or message,
+        )
+
+    # ==========================================================
+    # Internal Status Transition Helper
+    # ==========================================================
+
+    def _transition(
+        self,
+        po_id: int,
+        target_status: str,
+        user_id: int,
+        action: str,
+        message: str,
+    ) -> ProcurementPurchaseOrder:
+
+        purchase_order = self.update_status(
+            po_id=po_id,
+            status=target_status,
+            user_id=user_id,
+        )
+
+        if purchase_order is None:
+            raise ValueError(
+                "Purchase Order not found."
+            )
+
+        AuditService(self.db).log(
+            user_id=user_id,
+            action=action,
+            module="Purchase Order",
+            status="SUCCESS",
+            message=(
+                f"Purchase Order "
+                f"{purchase_order.po_number}: "
+                f"{message}"
+            ),
+        )
+
+        return purchase_order
+
+    # ==========================================================
     # Delete Purchase Order
-    # --------------------------------------------------
+    # ==========================================================
+
     def delete_purchase_order(
         self,
-        po_id: int
+        po_id: int,
     ) -> bool:
 
         purchase_order = (
-            self.db.query(PORecord)
-            .filter(PORecord.id == po_id)
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.id == po_id
+            )
             .first()
         )
 
@@ -270,3 +415,111 @@ class PurchaseOrderService:
 
         return True
 
+    # ==========================================================
+    # Create PO from Approved PR
+    # ==========================================================
+
+    def create_from_approved_pr(
+        self,
+        pr_id: int,
+        user_id: int,
+    ) -> ProcurementPurchaseOrder:
+
+        purchase_requisition = (
+            self.db.query(PurchaseRequisition)
+            .filter(
+                PurchaseRequisition.id == pr_id
+            )
+            .first()
+        )
+
+        if purchase_requisition is None:
+            raise ValueError(
+                "Purchase Requisition not found."
+            )
+
+        if purchase_requisition.status != "Approved":
+            raise ValueError(
+                "Only approved Purchase Requisitions "
+                "can create a Purchase Order."
+            )
+
+        if not purchase_requisition.selected_vendor_name:
+            raise ValueError(
+                "Select a vendor before creating "
+                "the Purchase Order."
+            )
+
+        if purchase_requisition.negotiated_amount is None:
+            raise ValueError(
+                "Record the negotiated amount before "
+                "creating the Purchase Order."
+            )
+
+        existing_po = (
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == purchase_requisition.id
+            )
+            .first()
+        )
+
+        if existing_po:
+            raise ValueError(
+                "A Purchase Order already exists "
+                "for this Purchase Requisition."
+            )
+
+        po_number = (
+            f"PO-{uuid.uuid4().hex[:8].upper()}"
+        )
+
+        purchase_order = ProcurementPurchaseOrder(
+            po_number=po_number,
+            purchase_requisition_id=purchase_requisition.id,
+            vendor_name=purchase_requisition.selected_vendor_name,
+            currency=purchase_requisition.currency,
+            subtotal=purchase_requisition.negotiated_amount,
+            tax=0,
+            total_amount=purchase_requisition.negotiated_amount,
+            status="Created",
+            created_by_id=user_id,
+        )
+
+        self.db.add(purchase_order)
+        self.db.flush()
+
+        for item in purchase_requisition.line_items:
+
+            purchase_order_line = (
+                ProcurementPurchaseOrderLine(
+                    purchase_order_id=purchase_order.id,
+                    description=item.description,
+                    quantity=item.quantity,
+                    unit_price=item.unit_price,
+                    amount=item.amount,
+                )
+            )
+
+            self.db.add(
+                purchase_order_line
+            )
+
+        self.db.commit()
+        self.db.refresh(purchase_order)
+
+        AuditService(self.db).log(
+            user_id=user_id,
+            action="CREATE",
+            module="Purchase Order",
+            status="SUCCESS",
+            message=(
+                f"Purchase Order "
+                f"{purchase_order.po_number} "
+                f"created from Purchase Requisition "
+                f"{purchase_requisition.pr_number}."
+            ),
+        )
+
+        return purchase_order

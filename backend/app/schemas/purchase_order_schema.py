@@ -1,41 +1,32 @@
 from datetime import datetime
-from typing import Optional
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
 
-
-# ==========================================================
-# Create Purchase Order
-# ==========================================================
-class PurchaseOrderCreate(BaseModel):
-    invoice_id: int
-
-    po_number: str
-
-    vendor_name: str
-
-    customer_name: str
-
-    currency: str
-
-    subtotal: float
-
-    tax: float
-
-    total_amount: float
-
-    blob_name: Optional[str] = None
-
-    blob_url: Optional[str] = None
-
-    status: Optional[str] = "Approved"
-
+class PurchaseOrderStatus(str, Enum):
+    CREATED = "Created"
+    PENDING_APPROVAL = "Pending Approval"
+    APPROVED = "Approved"
+    REJECTED = "Rejected"
+    SENT = "Sent"
+    VENDOR_ACCEPTED = "Vendor Accepted"
+    VENDOR_REJECTED = "Vendor Rejected"
+    CLOSED = "Closed"
+    CANCELLED = "Cancelled"
 
 # ==========================================================
 # Update Purchase Order Status
 # ==========================================================
 class PurchaseOrderStatusUpdate(BaseModel):
-    status: str
+    status: PurchaseOrderStatus
+
+
+class PurchaseOrderDecisionRequest(BaseModel):
+    remarks: str | None = None
+
+
+class PurchaseOrderVendorResponseRequest(BaseModel):
+    remarks: str | None = None
 
 
 # ==========================================================
@@ -45,15 +36,12 @@ class PurchaseOrderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    invoice_id: int
     po_number: str
+    purchase_requisition_id: int
     vendor_name: str
-    customer_name: str
     currency: str
     subtotal: float
     tax: float
     total_amount: float
-    blob_name: Optional[str]
-    blob_url: Optional[str]
-    status: str
-    generated_at: datetime
+    status: PurchaseOrderStatus
+    created_at: datetime

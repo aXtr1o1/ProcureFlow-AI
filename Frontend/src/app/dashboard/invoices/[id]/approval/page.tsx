@@ -10,7 +10,7 @@ import {
 } from "@/services/api";
 
 import { fmtDate } from "@/lib/invoices";
-import { formatRand } from "@/lib/currency";
+import { formatUsd } from "@/lib/currency";
 
 interface ApprovalHistory {
   invoice_id: number;
@@ -152,7 +152,7 @@ export default function InvoiceApprovalPage() {
     invoice_date: invoice.invoice_date ?? "",
     due_date: invoice.due_date ?? "",
     purchase_order_number: invoice.purchase_order_number ?? "",
-    currency: "ZAR",
+    currency: "USD",
     subtotal: Number(invoice.subtotal) || 0,
     tax: Number(invoice.tax) || 0,
     total_amount: Number(invoice.total_amount) || 0,
@@ -364,10 +364,10 @@ export default function InvoiceApprovalPage() {
               {isDecided ? (
                 <div className="flex items-baseline gap-xs">
                   <span className="font-display-lg text-display-lg text-on-background tracking-tight">
-                    {formatRand(invoice.total_amount, invoice.currency)}
+                    {formatUsd(invoice.total_amount, invoice.currency)}
                   </span>
                   <span className="font-body-sm text-body-sm text-on-surface-variant">
-                    ZAR
+                    USD
                   </span>
                 </div>
               ) : (
@@ -385,7 +385,7 @@ export default function InvoiceApprovalPage() {
                     className={`${inputClass} max-w-[180px] font-title-lg text-title-lg`}
                   />
                   <span className="font-label-md text-label-md text-on-surface-variant">
-                    ZAR (Rand)
+                    USD (US Dollar)
                   </span>
                 </div>
               )}
@@ -458,7 +458,7 @@ export default function InvoiceApprovalPage() {
                 <p className="text-sm text-gray-500">Subtotal</p>
                 {isDecided ? (
                   <p>
-                    {formatRand(invoice.subtotal, invoice.currency)}
+                    {formatUsd(invoice.subtotal, invoice.currency)}
                   </p>
                 ) : (
                   <input
@@ -477,7 +477,7 @@ export default function InvoiceApprovalPage() {
                 <p className="text-sm text-gray-500">Tax</p>
                 {isDecided ? (
                   <p>
-                    {formatRand(invoice.tax, invoice.currency)}
+                    {formatUsd(invoice.tax, invoice.currency)}
                   </p>
                 ) : (
                   <input

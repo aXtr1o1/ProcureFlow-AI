@@ -8,16 +8,14 @@ from app.database.models import (
     InvoiceStatusLog,
     ApprovalHistory,
 )
-from app.services.purchase_order_service import PurchaseOrderService
 from app.services.audit_service import AuditService
-from app.services.currency_service import convert_invoice_amounts_to_zar, to_zar
+from app.services.currency_service import convert_invoice_amounts_to_usd, to_usd
 
 
 class ApprovalService:
 
     def __init__(self, db: Session):
         self.db = db
-        self.purchase_order_service = PurchaseOrderService(db)
         self.audit_service = AuditService(db)
 
     # ======================================================
@@ -51,7 +49,7 @@ class ApprovalService:
         if edits is None:
             return
 
-        source_currency = getattr(edits, "currency", None) or invoice.currency or "ZAR"
+        source_currency = getattr(edits, "currency", None) or invoice.currency or "USD"
 
         header_map = {
             "invoice_number": getattr(edits, "invoice_number", None),
@@ -61,13 +59,13 @@ class ApprovalService:
             "invoice_date": getattr(edits, "invoice_date", None),
             "due_date": getattr(edits, "due_date", None),
             "purchase_order_number": getattr(edits, "purchase_order_number", None),
-            "currency": "ZAR",
+            "currency": "USD",
             "subtotal": getattr(edits, "subtotal", None),
             "tax": getattr(edits, "tax", None),
             "total_amount": getattr(edits, "total_amount", None),
         }
 
-        converted = convert_invoice_amounts_to_zar(
+        converted = convert_invoice_amounts_to_usd(
             {
                 "currency": source_currency,
                 "subtotal": header_map["subtotal"]
@@ -87,7 +85,7 @@ class ApprovalService:
             if value is not None:
                 setattr(invoice, field, value)
 
-        invoice.currency = "ZAR"
+        invoice.currency = "USD"
         invoice.subtotal = converted["subtotal"]
         invoice.tax = converted["tax"]
         invoice.total_amount = converted["total_amount"]
@@ -107,9 +105,9 @@ class ApprovalService:
             if line_edit.quantity is not None:
                 line.quantity = line_edit.quantity
             if line_edit.unit_price is not None:
-                line.unit_price = to_zar(line_edit.unit_price, source_currency)
+                line.unit_price = to_usd(line_edit.unit_price, source_currency)
             if line_edit.amount is not None:
-                line.amount = to_zar(line_edit.amount, source_currency)
+                line.amount = to_usd(line_edit.amount, source_currency)
             elif line.quantity is not None and line.unit_price is not None:
                 line.amount = float(line.quantity) * float(line.unit_price)
 
@@ -129,8 +127,28 @@ class ApprovalService:
         if invoice is None:
             return None
 
-        # Persist any reviewer corrections before marking approved / generating PO
-        self.apply_invoice_edits(invoice, invoice_edits)
+        if invoice.procurement_purchase_order_id is None:
+            raise ValueError("Link the invoice to a Purchase Order before approval.")
+        if invoice.processing_status != "Approval Pending":
+            raise ValueError(
+                "Only successfully matched invoices sent for approval can be approved."
+            )
+
+        # A financial edit invalidates the previous match.  It is saved for
+        # review, but the invoice must be matched again before approval.
+        if invoice_edits is not None:
+            self.apply_invoice_edits(invoice, invoice_edits)
+            invoice.processing_status = "Review Required"
+            self.db.add(InvoiceStatusLog(
+                invoice_id=invoice.id,
+                status="Review Required",
+                remarks="Invoice values changed during approval. Run 2-way matching again.",
+                updated_by=approved_by,
+            ))
+            self.db.commit()
+            raise ValueError(
+                "Invoice values were updated. Run 2-way matching again before approval."
+            )
 
         invoice.processing_status = "Approved"
 
@@ -151,26 +169,15 @@ class ApprovalService:
 
         self.db.add(approval)
 
-        #
-        # Automatically Create Purchase Order
-        #
-        if not self.purchase_order_service.get_purchase_order_by_invoice(
-            invoice.id
-        ):
-
-            self.purchase_order_service.generate_purchase_order(
-                invoice.id
-            )
-            invoice.processing_status = "PO Completed"
-
-        status_log = InvoiceStatusLog(
+        payment_status_log = InvoiceStatusLog(
             invoice_id=invoice.id,
-            status="PO Completed",
-            remarks="Purchase Order generated successfully.",
+            status="Payment Pending",
+            remarks="Invoice approved and ready for payment processing.",
             updated_by=approved_by
         )
 
-        self.db.add(status_log)
+        self.db.add(payment_status_log)
+        invoice.processing_status = "Payment Pending"
 
         self.db.commit()
 

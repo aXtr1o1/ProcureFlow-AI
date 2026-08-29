@@ -1,4 +1,4 @@
-# ProcureFlow-AI
+# CloudGate
 
 # AI Invoice to PO Automation — Frontend
 
@@ -168,7 +168,7 @@ The backend currently provides the following services:
 
 - Azure Blob Storage
 - Azure Document Intelligence
-- Azure OpenAI
+- Gemini
 - Azure AI Search
 
 ---
