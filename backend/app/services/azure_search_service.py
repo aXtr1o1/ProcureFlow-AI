@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 
+
 class AzureSearchService:
+    """
+    Service responsible for querying Azure AI Search.
+    """
 
     def __init__(self, db: Optional[Session] = None):
         self.db = db

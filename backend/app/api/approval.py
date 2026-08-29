@@ -61,12 +61,15 @@ def approve_invoice(
 
     service = ApprovalService(db)
 
-    invoice = service.approve_invoice(
-        invoice_id=invoice_id,
-        approved_by=request.approved_by,
-        user_id=current_user.id,
-        invoice_edits=request.invoice_edits,
-    )
+    try:
+        invoice = service.approve_invoice(
+            invoice_id=invoice_id,
+            approved_by=request.approved_by,
+            user_id=current_user.id,
+            invoice_edits=request.invoice_edits,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
 
     if invoice is None:
         raise HTTPException(

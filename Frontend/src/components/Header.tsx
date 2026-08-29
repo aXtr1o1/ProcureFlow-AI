@@ -38,7 +38,7 @@ export default function Header() {
       <div className="h-16 w-full max-w-container-max mx-auto px-margin-desktop flex items-center justify-between">
         <div className="flex items-center gap-8">
           <span className="font-title-lg text-title-lg text-on-surface whitespace-nowrap">
-            ProcureFlow AI
+            CloudGate
           </span>
           <nav className="hidden sm:flex items-center gap-1">
             {NAV_LINKS.map((link) => {

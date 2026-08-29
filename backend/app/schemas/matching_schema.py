@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -20,3 +20,7 @@ class MatchingResponse(BaseModel):
     status: str
 
     message: str
+
+    match_run_id: int
+
+    exception_id: Optional[int] = None

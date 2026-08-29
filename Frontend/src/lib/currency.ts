@@ -1,24 +1,24 @@
-/** Display and normalize amounts as South African Rand (ZAR). */
+/** Display and normalize amounts as United States Dollars (USD). */
 
-const FX_TO_ZAR: Record<string, number> = {
-  ZAR: 1,
-  R: 1,
-  USD: 18.5,
-  US$: 18.5,
-  AED: 5.05,
-  EUR: 20.0,
-  GBP: 23.5,
+const FX_TO_USD: Record<string, number> = {
+  USD: 1,
+  US$: 1,
+  ZAR: 1 / 18.5,
+  R: 1 / 18.5,
+  AED: 1 / 5.05,
+  EUR: 1 / 20.0,
+  GBP: 1 / 23.5,
 };
 
 export function normalizeCurrency(code?: string | null): string {
-  if (!code) return "ZAR";
+  if (!code) return "USD";
   const cleaned = String(code).trim().toUpperCase().replace(/[^A-Z$]/g, "");
-  if (!cleaned || cleaned === "R" || cleaned === "ZAR") return "ZAR";
+  if (!cleaned) return "USD";
   if (cleaned === "US$" || cleaned === "$") return "USD";
   return cleaned;
 }
 
-export function toZar(
+export function toUsd(
   amount?: number | string | null,
   currency?: string | null
 ): number | null {
@@ -26,25 +26,25 @@ export function toZar(
   const value = typeof amount === "number" ? amount : Number(amount);
   if (!Number.isFinite(value)) return null;
   const code = normalizeCurrency(currency);
-  const rate = FX_TO_ZAR[code] ?? 1;
+  const rate = FX_TO_USD[code] ?? 1;
   return Math.round(value * rate * 100) / 100;
 }
 
-export function formatRand(
+export function formatUsd(
   amount?: number | string | null,
   currency?: string | null
 ): string {
-  const zar = toZar(amount, currency);
-  if (zar === null) return "—";
-  return new Intl.NumberFormat("en-ZA", {
+  const usd = toUsd(amount, currency);
+  if (usd === null) return "—";
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "ZAR",
+    currency: "USD",
     currencyDisplay: "symbol",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(zar);
+  }).format(usd);
 }
 
 export function currencyLabel(currency?: string | null): string {
-  return "ZAR";
+  return "USD";
 }

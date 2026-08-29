@@ -19,7 +19,11 @@ from app.core.security import get_current_user
 from app.database.models import User, Invoice
 from app.services.invoice_service import InvoiceService
 from app.services.validation_service import ValidationService
-from app.services.currency_service import convert_invoice_amounts_to_zar
+from app.services.currency_service import convert_invoice_amounts_to_usd
+
+from app.schemas.invoice_schema import (
+    InvoicePurchaseOrderLinkRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +111,8 @@ def _persist_validated_invoice(
         extracted_fields=ocr_result,
     )
 
-    # Convert all monetary values to South African Rand before saving
-    zar_data = convert_invoice_amounts_to_zar(
+    # Convert all monetary values to the canonical USD currency before saving.
+    usd_data = convert_invoice_amounts_to_usd(
         {
             "invoice_number": ocr_result.get("invoice_number", ""),
             "vendor_name": ocr_result.get("vendor_name", ""),
@@ -117,7 +121,7 @@ def _persist_validated_invoice(
             "invoice_date": ocr_result.get("invoice_date", ""),
             "due_date": ocr_result.get("due_date", ""),
             "purchase_order_number": ocr_result.get("purchase_order_number", ""),
-            "currency": ocr_result.get("currency", "ZAR"),
+            "currency": ocr_result.get("currency", "USD"),
             "subtotal": ocr_result.get("subtotal", 0),
             "tax": ocr_result.get("tax", 0),
             "total_amount": ocr_result.get("total_amount", 0),
@@ -128,17 +132,17 @@ def _persist_validated_invoice(
     invoice = invoice_service.save_invoice(
         user_id=user_id,
         invoice_data={
-            "invoice_number": zar_data.get("invoice_number", ""),
-            "vendor_name": zar_data.get("vendor_name", ""),
-            "vendor_address": zar_data.get("vendor_address", ""),
-            "customer_name": zar_data.get("customer_name", ""),
-            "invoice_date": zar_data.get("invoice_date", ""),
-            "due_date": zar_data.get("due_date", ""),
-            "purchase_order_number": zar_data.get("purchase_order_number", ""),
-            "currency": "ZAR",
-            "subtotal": zar_data.get("subtotal", 0),
-            "tax": zar_data.get("tax", 0),
-            "total_amount": zar_data.get("total_amount", 0),
+            "invoice_number": usd_data.get("invoice_number", ""),
+            "vendor_name": usd_data.get("vendor_name", ""),
+            "vendor_address": usd_data.get("vendor_address", ""),
+            "customer_name": usd_data.get("customer_name", ""),
+            "invoice_date": usd_data.get("invoice_date", ""),
+            "due_date": usd_data.get("due_date", ""),
+            "purchase_order_number": usd_data.get("purchase_order_number", ""),
+            "currency": "USD",
+            "subtotal": usd_data.get("subtotal", 0),
+            "tax": usd_data.get("tax", 0),
+            "total_amount": usd_data.get("total_amount", 0),
             "line_items": [],
         },
         blob_name=upload_result["blob_name"],
@@ -165,7 +169,7 @@ def _persist_validated_invoice(
         remarks="Invoice validation completed successfully.",
     )
 
-    line_items = zar_data.get("line_items", []) or []
+    line_items = usd_data.get("line_items", []) or []
     if line_items:
         invoice_service.save_line_items(
             invoice=invoice,
@@ -336,7 +340,23 @@ async def get_invoice_details(
             ]
         }
     }
-    
+
+# ==========================================================
+# Link Invoice to Procurement Purchase Order
+# ==========================================================
+@router.put("/{invoice_id}/purchase-order")
+async def link_invoice_to_purchase_order(
+    invoice_id: int,
+    request: InvoicePurchaseOrderLinkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    invoice_service = InvoiceService(db)
+
+    return invoice_service.link_invoice_to_purchase_order(
+        invoice_id=invoice_id,
+        purchase_order_id=request.purchase_order_id,
+    )
 
 # ==========================================================
 # Download Invoice
@@ -395,7 +415,7 @@ async def delete_invoice(blob_name: str):
 
 
 # ==========================================================
-# Update Invoice Status (Placeholder)
+# Send a successfully matched invoice for approval
 # ==========================================================
 @router.put("/{invoice_id}/status")
 async def update_invoice_status(
@@ -406,27 +426,7 @@ async def update_invoice_status(
 
     invoice_service = InvoiceService(db)
 
-    invoice = invoice_service.get_invoice_by_id(
-        invoice_id,
-        current_user.id
-    )
-
-    if invoice is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Invoice not found."
-        )
-
-    invoice.processing_status = "Approval Pending"
-
-    invoice_service.save_status_log(
-        invoice=invoice,
-        status="Approval Pending",
-        remarks="Invoice processing completed."
-    )
-
-    db.commit()
-    db.refresh(invoice)
+    invoice = invoice_service.send_for_approval(invoice_id)
 
     return {
         "success": True,

@@ -1,11 +1,10 @@
 "use client";
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getInvoices } from "@/services/api";
 import type { Invoice } from "@/lib/invoices";
-import { formatRand } from "@/lib/currency";
+import { formatUsd } from "@/lib/currency";
 import {
   useAssistantChat,
   type ChatSource,
@@ -55,11 +54,11 @@ function buildGreeting(invoices: Invoice[]): string {
       i.processing_status === "Validation Completed",
   ).length;
   if (pending === 0) {
-    return "Your invoice queue looks clear. Ask me anything about vendors, amounts (in Rand), duplicates, or upcoming deadlines — I’ll search your indexed documents and answer from them.";
+    return "Your invoice queue looks clear. Ask me anything about vendors, amounts (in USD), duplicates, or upcoming deadlines — I’ll search your indexed documents and answer from them.";
   }
   return `You have **${pending} invoice${
     pending === 1 ? "" : "s"
-  }** in review. Ask about vendors, due dates, duplicates, or pending approvals — I’ll pull from your documents and show amounts in **South African Rand (R)**.`;
+  }** in review. Ask about vendors, due dates, duplicates, or pending approvals — I’ll pull from your documents and show amounts in **US Dollars (USD)**.`;
 }
 
 function shortenUrlLabel(url: string) {
@@ -224,7 +223,7 @@ function SourceCard({
             <p className="font-label-sm text-label-sm text-outline">
               Amount:{" "}
               <span className="text-on-surface">
-                {formatRand(source.total_amount, source.currency || "ZAR")}
+                {formatUsd(source.total_amount, source.currency || "USD")}
               </span>
             </p>
             <p className="font-label-sm text-label-sm text-outline">
@@ -244,7 +243,7 @@ function SourceCard({
                 >
                   {asText(item.description, "Item")} · Qty{" "}
                   {asText(item.quantity, "0")} ·{" "}
-                  {formatRand(item.amount ?? item.unit_price, source.currency || "ZAR")}
+                  {formatUsd(item.amount ?? item.unit_price, source.currency || "USD")}
                 </li>
               ))}
             </ul>
@@ -324,7 +323,7 @@ export default function AssistantPage() {
           {
             id: newId(),
             role: "bot",
-            text: "Hello! Ask me about invoices — I’ll search your documents and answer with amounts in Rand (R).",
+            text: "Hello! Ask me about invoices — I’ll search your documents and answer with amounts in US Dollars (USD).",
             time: timeNow(),
           },
         ]);
@@ -362,7 +361,7 @@ export default function AssistantPage() {
             Assistant
           </h1>
           <p className="font-body-md text-body-md text-on-surface-variant">
-            ChatGPT-style answers from your invoice documents · amounts in R (ZAR)
+            ChatGPT-style answers from your invoice documents · amounts in USD ($)
           </p>
         </div>
         <button
@@ -522,7 +521,7 @@ export default function AssistantPage() {
           </button>
         </form>
         <p className="mt-2 text-center font-label-sm text-label-sm text-outline">
-          Session kept until logout · amounts shown in Rand (ZAR)
+          Session kept until logout · amounts shown in USD ($)
         </p>
       </div>
     </div>

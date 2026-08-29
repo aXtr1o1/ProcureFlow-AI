@@ -1,10 +1,12 @@
 from typing import Optional
 
+from click import prompt
 from sqlalchemy.orm import Session
-from app.services.azure_openai_service import AzureOpenAIService
+from app.services.gemini_service import GeminiService
 
 from app.database.models import Invoice
 from app.services.blob_storage_service import BlobStorageService
+from app.services import gemini_service
 
 
 class SummaryService:
@@ -37,11 +39,10 @@ class SummaryService:
         )
 
         prompt = f"""
-        You are a senior finance analyst.
+        You are an invoice analysis assistant.
 
-        Generate an executive summary for the following invoice.
+        Generate a professional summary.
 
-        Invoice Details:
         Invoice Number: {invoice.invoice_number}
         Vendor: {invoice.vendor_name}
         Customer: {invoice.customer_name}
@@ -49,25 +50,23 @@ class SummaryService:
         Currency: {invoice.currency}
         Subtotal: {invoice.subtotal}
         Tax: {invoice.tax}
-        Total Amount: {invoice.total_amount}
+        Total: {invoice.total_amount}
 
         Line Items:
         {line_items}
 
-        Write a professional executive summary.
+        Generate:
+        1. Vendor overview
+        2. Invoice purpose
+        3. Financial summary
+        4. Important observations
 
-        Requirements:
-        - Write in one paragraph.
-        - Do NOT use numbering.
-        - Do NOT use bullet points.
-        - Mention the vendor, invoice purpose, financial highlights and any important observations.
-        - Keep the response under 120 words.
-        - Use formal business language suitable for finance managers.
+        Keep the response under 150 words.
         """
 
-        openai_service = AzureOpenAIService()
+        gemini_service = GeminiService()
 
-        summary_text = openai_service.chat(prompt)
+        summary_text = gemini_service.chat(prompt)
 
         summary_data = {
             "invoice_id": invoice.id,

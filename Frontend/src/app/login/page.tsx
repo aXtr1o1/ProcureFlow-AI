@@ -379,7 +379,7 @@ export default function LoginPage() {
 
           <footer className="mt-12 text-center">
             <p className="font-label-md text-label-md text-outline uppercase tracking-[0.2em]">
-              Powered by AI Invoice Automation
+              Powered by CloudGate AI Invoice Automation
             </p>
           </footer>
         </div>

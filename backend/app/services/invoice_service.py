@@ -4,8 +4,10 @@ from sqlalchemy import or_, cast, String
 from app.database.models import (
     Invoice,
     InvoiceLineItem,
-    InvoiceStatusLog
+    InvoiceStatusLog,
+    ProcurementPurchaseOrder,
 )
+from app.services.audit_service import AuditService
 
 
 class InvoiceService:
@@ -127,6 +129,83 @@ class InvoiceService:
             .filter(Invoice.id == invoice_id)
             .first()
         )
+
+
+    # ==========================================================
+    # Link Invoice to Procurement Purchase Order
+    # ==========================================================
+    def link_invoice_to_purchase_order(
+        self,
+        invoice_id: int,
+        purchase_order_id: int
+    ):
+        invoice = (
+            self.db.query(Invoice)
+            .filter(Invoice.id == invoice_id)
+            .first()
+        )
+
+        if invoice is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Invoice not found."
+            )
+
+        purchase_order = (
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.id == purchase_order_id
+            )
+            .first()
+        )
+
+        if purchase_order is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Purchase Order not found."
+            )
+
+        invoice.procurement_purchase_order_id = purchase_order.id
+        invoice.purchase_order_number = purchase_order.po_number
+        invoice.processing_status = "PO Linked"
+
+        self.db.add(InvoiceStatusLog(
+            invoice_id=invoice.id,
+            status="PO Linked",
+            remarks=f"Invoice linked to Purchase Order {purchase_order.po_number}.",
+            updated_by="System",
+        ))
+
+        self.db.commit()
+        self.db.refresh(invoice)
+
+        return invoice
+
+    def send_for_approval(self, invoice_id: int) -> Invoice:
+        invoice = self.get_invoice_by_id(invoice_id)
+        if invoice is None:
+            raise HTTPException(status_code=404, detail="Invoice not found.")
+        if invoice.procurement_purchase_order_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Link the invoice to a Purchase Order before approval.",
+            )
+        if invoice.processing_status not in {"Matched", "Match Override Approved"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Only matched invoices or authorized match overrides can be sent for approval.",
+            )
+
+        invoice.processing_status = "Approval Pending"
+        self.db.add(InvoiceStatusLog(
+            invoice_id=invoice.id,
+            status="Approval Pending",
+            remarks="Invoice match was accepted and sent for approval.",
+            updated_by="System",
+        ))
+        self.db.commit()
+        self.db.refresh(invoice)
+        return invoice
 
 
     def get_invoice_line_items(self, invoice_id: int):

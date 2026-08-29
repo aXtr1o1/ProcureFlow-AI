@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.database.models import AuditLog
@@ -14,7 +15,7 @@ class AuditService:
         action: str,
         module: str,
         status: str,
-        message: str,
+        message: Optional[str] = None,
     ):
 
         audit = AuditLog(
