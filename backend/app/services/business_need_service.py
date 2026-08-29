@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.config import settings
 from app.database.models import BusinessNeed, BusinessNeedType
 
 
@@ -78,6 +79,10 @@ class BusinessNeedService:
                 detail="Select an active Business Need type."
             )
 
+        currency = (
+            data.currency or settings.DEFAULT_CURRENCY
+        ).strip().upper()
+
         business_need = BusinessNeed(
             business_need_type_id=need_type.id,
             requester_id=requester_id,
@@ -90,7 +95,7 @@ class BusinessNeedService:
             cost_center=data.cost_center,
             required_by_date=data.required_by_date,
             estimated_value=data.estimated_value,
-            currency=data.currency.upper(),
+            currency=currency,
             status="Draft",
             need_number="PENDING",
         )
@@ -104,13 +109,19 @@ class BusinessNeedService:
 
         self.db.commit()
 
-        return self.get_by_id(business_need.id)
+        return self.get_by_id(
+            business_need.id,
+            requester_id
+        )
 
-    def list(self):
+    def list(self, requester_id: int):
         return (
             self.db.query(BusinessNeed)
             .options(
                 joinedload(BusinessNeed.business_need_type)
+            )
+            .filter(
+                BusinessNeed.requester_id == requester_id
             )
             .order_by(BusinessNeed.id.desc())
             .all()
@@ -118,7 +129,8 @@ class BusinessNeedService:
 
     def get_by_id(
         self,
-        business_need_id: int
+        business_need_id: int,
+        requester_id: int
     ) -> BusinessNeed:
 
         business_need = (
@@ -127,7 +139,8 @@ class BusinessNeedService:
                 joinedload(BusinessNeed.business_need_type)
             )
             .filter(
-                BusinessNeed.id == business_need_id
+                BusinessNeed.id == business_need_id,
+                BusinessNeed.requester_id == requester_id,
             )
             .first()
         )
@@ -143,14 +156,17 @@ class BusinessNeedService:
     # ======================================================
     # Update Business Need
     # ======================================================
+
     def update(
         self,
         business_need_id: int,
-        data
+        data,
+        requester_id: int
     ) -> BusinessNeed:
 
         business_need = self.get_by_id(
-            business_need_id
+            business_need_id,
+            requester_id
         )
 
         if business_need.status != "Draft":
@@ -174,9 +190,11 @@ class BusinessNeedService:
                 detail="Select an active Business Need type."
             )
 
-        business_need.business_need_type_id = (
-            data.business_need_type_id
-        )
+        currency = (
+            data.currency or settings.DEFAULT_CURRENCY
+        ).strip().upper()
+
+        business_need.business_need_type_id = data.business_need_type_id
         business_need.title = data.title
         business_need.description = data.description
         business_need.department = data.department
@@ -186,24 +204,28 @@ class BusinessNeedService:
         business_need.cost_center = data.cost_center
         business_need.required_by_date = data.required_by_date
         business_need.estimated_value = data.estimated_value
-        business_need.currency = data.currency.upper()
+        business_need.currency = currency
 
         self.db.commit()
 
         return self.get_by_id(
-            business_need.id
+            business_need.id,
+            requester_id
         )
 
     # ======================================================
     # Submit Business Need
     # ======================================================
+
     def submit(
         self,
-        business_need_id: int
+        business_need_id: int,
+        requester_id: int
     ) -> BusinessNeed:
 
         business_need = self.get_by_id(
-            business_need_id
+            business_need_id,
+            requester_id
         )
 
         if business_need.status != "Draft":
@@ -217,5 +239,6 @@ class BusinessNeedService:
         self.db.commit()
 
         return self.get_by_id(
-            business_need.id
+            business_need.id,
+            requester_id
         )

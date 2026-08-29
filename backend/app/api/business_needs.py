@@ -3,17 +3,13 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
-
 from app.database.database import get_db
-
 from app.database.models import User
-
 from app.schemas.business_need_schema import (
     BusinessNeedCreate,
     BusinessNeedResponse,
     BusinessNeedTypeResponse,
 )
-
 from app.services.business_need_service import BusinessNeedService
 
 
@@ -58,7 +54,9 @@ def list_business_needs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return BusinessNeedService(db).list()
+    return BusinessNeedService(db).list(
+        current_user.id
+    )
 
 
 @router.get(
@@ -71,7 +69,8 @@ def get_business_need(
     current_user: User = Depends(get_current_user)
 ):
     return BusinessNeedService(db).get_by_id(
-        business_need_id
+        business_need_id,
+        current_user.id,
     )
 
 
@@ -87,8 +86,10 @@ def update_business_need(
 ):
     return BusinessNeedService(db).update(
         business_need_id,
-        request
+        request,
+        current_user.id,
     )
+
 
 @router.post(
     "/{business_need_id}/submit",
@@ -100,5 +101,6 @@ def submit_business_need(
     current_user: User = Depends(get_current_user)
 ):
     return BusinessNeedService(db).submit(
-        business_need_id
+        business_need_id,
+        current_user.id,
     )

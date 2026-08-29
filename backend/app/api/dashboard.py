@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,9 @@ from app.schemas.dashboard_schema import (
 )
 
 from app.services.dashboard_service import DashboardService
+
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(
@@ -47,10 +52,15 @@ def get_dashboard_overview(
     try:
         return service.get_overview()
 
-    except Exception as error:
+    except Exception:
+        logger.exception(
+            "Failed to load dashboard overview for user_id=%s",
+            current_user.id,
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unable to load dashboard data: {str(error)}",
+            detail="Unable to load dashboard data.",
         )
 
 
@@ -75,10 +85,15 @@ def get_dashboard_funnel(
     try:
         return service.get_funnel()
 
-    except Exception as error:
+    except Exception:
+        logger.exception(
+            "Failed to load dashboard funnel for user_id=%s",
+            current_user.id,
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unable to load dashboard funnel: {str(error)}",
+            detail="Unable to load dashboard funnel data.",
         )
 
 
@@ -103,8 +118,13 @@ def get_dashboard_spend(
     try:
         return service.get_spend()
 
-    except Exception as error:
+    except Exception:
+        logger.exception(
+            "Failed to load dashboard spend data for user_id=%s",
+            current_user.id,
+        )
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unable to load dashboard spend data: {str(error)}",
+            detail="Unable to load dashboard spend data.",
         )

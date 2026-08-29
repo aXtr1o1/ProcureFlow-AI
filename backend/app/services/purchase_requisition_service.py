@@ -173,6 +173,12 @@ class PurchaseRequisitionService:
                 detail="A vendor cannot be changed after PO creation."
             )
 
+        if pr.negotiated_amount is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Vendor cannot be changed after negotiation has been recorded."
+            )
+
         vendor_name = vendor_name.strip()
 
         if not vendor_name:
@@ -208,22 +214,37 @@ class PurchaseRequisitionService:
 
         pr = self.get_by_id(pr_id)
 
+        # ======================================================
+        # Validate PR workflow state
+        # ======================================================
+
         if pr.status != "Approved":
             raise HTTPException(
                 status_code=409,
-                detail="Approve the PR before recording negotiation."
+                detail=(
+                    "Negotiation can only be recorded for an "
+                    "approved Purchase Requisition."
+                ),
             )
+
+        # ======================================================
+        # Validate vendor selection
+        # ======================================================
 
         if not pr.selected_vendor_name:
             raise HTTPException(
                 status_code=409,
-                detail="Select a vendor before recording negotiation."
+                detail="Select a vendor before recording negotiation.",
             )
+
+        # ======================================================
+        # Validate negotiated amount
+        # ======================================================
 
         if negotiated_amount <= 0:
             raise HTTPException(
                 status_code=422,
-                detail="Negotiated amount must be greater than zero."
+                detail="Negotiated amount must be greater than zero.",
             )
 
         original_amount = pr.total_amount or 0
@@ -231,28 +252,35 @@ class PurchaseRequisitionService:
         if original_amount <= 0:
             raise HTTPException(
                 status_code=409,
-                detail="PR total amount must be greater than zero."
+                detail="PR total amount must be greater than zero.",
             )
 
         if negotiated_amount > original_amount:
             raise HTTPException(
                 status_code=422,
-                detail="Negotiated amount cannot exceed the original PR amount."
+                detail=(
+                    "Negotiated amount cannot exceed "
+                    "the original PR amount."
+                ),
             )
+
+        # ======================================================
+        # Calculate price variance
+        # ======================================================
 
         price_variance = round(
             original_amount - negotiated_amount,
-            2
+            2,
         )
 
-        price_variance_percentage = (
-            round(
-                (price_variance / original_amount) * 100,
-                2
-            )
-            if original_amount > 0
-            else 0
+        price_variance_percentage = round(
+            (price_variance / original_amount) * 100,
+            2,
         )
+
+        # ======================================================
+        # Record negotiation
+        # ======================================================
 
         pr.negotiated_amount = negotiated_amount
         pr.price_variance = price_variance

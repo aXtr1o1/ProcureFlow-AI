@@ -9,62 +9,139 @@ from app.schemas.purchase_requisition_schema import (
     PurchaseRequisitionDecisionRequest,
     PurchaseRequisitionResponse,
     VendorSelectionRequest,
-    NegotiationOutcomeRequest
+    NegotiationOutcomeRequest,
 )
 from app.services.purchase_requisition_service import PurchaseRequisitionService
 
 
-router = APIRouter(prefix="/purchase-requisitions", tags=["Purchase Requisitions"])
+router = APIRouter(
+    prefix="/purchase-requisitions",
+    tags=["Purchase Requisitions"],
+)
 
 
-@router.post("/", response_model=PurchaseRequisitionResponse, status_code=status.HTTP_201_CREATED)
+# ==========================================================
+# Create Purchase Requisition
+# ==========================================================
+
+@router.post(
+    "/",
+    response_model=PurchaseRequisitionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_purchase_requisition(
     request: PurchaseRequisitionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return PurchaseRequisitionService(db).create(request, current_user.id)
+    return PurchaseRequisitionService(db).create(
+        request,
+        current_user.id,
+    )
 
 
-@router.get("/", response_model=list[PurchaseRequisitionResponse])
-def list_purchase_requisitions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+# ==========================================================
+# List Purchase Requisitions
+# ==========================================================
+
+@router.get(
+    "/",
+    response_model=list[PurchaseRequisitionResponse],
+)
+def list_purchase_requisitions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return PurchaseRequisitionService(db).list()
 
 
-@router.get("/{pr_id}", response_model=PurchaseRequisitionResponse)
-def get_purchase_requisition(pr_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+# ==========================================================
+# Get Purchase Requisition
+# ==========================================================
+
+@router.get(
+    "/{pr_id}",
+    response_model=PurchaseRequisitionResponse,
+)
+def get_purchase_requisition(
+    pr_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return PurchaseRequisitionService(db).get_by_id(pr_id)
 
 
-@router.post("/{pr_id}/submit", response_model=PurchaseRequisitionResponse)
-def submit_purchase_requisition(pr_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+# ==========================================================
+# Submit Purchase Requisition
+# ==========================================================
+
+@router.post(
+    "/{pr_id}/submit",
+    response_model=PurchaseRequisitionResponse,
+)
+def submit_purchase_requisition(
+    pr_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     return PurchaseRequisitionService(db).submit(
         pr_id,
         current_user.id,
     )
 
 
-@router.post("/{pr_id}/approve", response_model=PurchaseRequisitionResponse)
+# ==========================================================
+# Approve Purchase Requisition
+# ==========================================================
+
+@router.post(
+    "/{pr_id}/approve",
+    response_model=PurchaseRequisitionResponse,
+)
 def approve_purchase_requisition(
     pr_id: int,
     request: PurchaseRequisitionDecisionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return PurchaseRequisitionService(db).decide(pr_id, current_user.id, "Approved", request.remarks)
+    return PurchaseRequisitionService(db).decide(
+        pr_id,
+        current_user.id,
+        "Approved",
+        request.remarks,
+    )
 
 
-@router.post("/{pr_id}/reject", response_model=PurchaseRequisitionResponse)
+# ==========================================================
+# Reject Purchase Requisition
+# ==========================================================
+
+@router.post(
+    "/{pr_id}/reject",
+    response_model=PurchaseRequisitionResponse,
+)
 def reject_purchase_requisition(
     pr_id: int,
     request: PurchaseRequisitionDecisionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return PurchaseRequisitionService(db).decide(pr_id, current_user.id, "Rejected", request.remarks)
+    return PurchaseRequisitionService(db).decide(
+        pr_id,
+        current_user.id,
+        "Rejected",
+        request.remarks,
+    )
 
 
-@router.post("/{pr_id}/select-vendor", response_model=PurchaseRequisitionResponse)
+# ==========================================================
+# Select Vendor
+# ==========================================================
+
+@router.post(
+    "/{pr_id}/select-vendor",
+    response_model=PurchaseRequisitionResponse,
+)
 def select_vendor(
     pr_id: int,
     request: VendorSelectionRequest,
@@ -77,9 +154,14 @@ def select_vendor(
         user_id=current_user.id,
     )
 
+
+# ==========================================================
+# Record Negotiation
+# ==========================================================
+
 @router.post(
     "/{pr_id}/negotiation",
-    response_model=PurchaseRequisitionResponse
+    response_model=PurchaseRequisitionResponse,
 )
 def record_negotiation(
     pr_id: int,

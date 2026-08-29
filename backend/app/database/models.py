@@ -309,33 +309,106 @@ class BusinessNeed(Base):
     __tablename__ = "business_needs"
 
     id = Column(Integer, primary_key=True, index=True)
-    need_number = Column(String(100), unique=True, nullable=False, index=True)
-    business_need_type_id = Column(Integer, ForeignKey("business_need_types.id"), nullable=False)
-    requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    title = Column(String(255), nullable=False)
-    description = Column(String(2000), nullable=True)
-    department = Column(String(255), nullable=True)
-    business_unit = Column(String(255), nullable=True)
-    project = Column(String(255), nullable=True)
-    location = Column(String(255), nullable=True)
-    cost_center = Column(String(100), nullable=True)
-    required_by_date = Column(String(100), nullable=True)
-    estimated_value = Column(Float, default=0)
-    currency = Column(String(20), default="USD")
-    status = Column(String(100), default="Draft", nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    need_number = Column(
+        String(100),
+        unique=True,
+        nullable=False,
+        index=True
+    )
+
+    business_need_type_id = Column(
+        Integer,
+        ForeignKey("business_need_types.id"),
+        nullable=False
+    )
+
+    requester_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False
+    )
+
+    title = Column(
+        String(255),
+        nullable=False
+    )
+
+    description = Column(
+        String(2000),
+        nullable=True
+    )
+
+    department = Column(
+        String(255),
+        nullable=True
+    )
+
+    business_unit = Column(
+        String(255),
+        nullable=True
+    )
+
+    project = Column(
+        String(255),
+        nullable=True
+    )
+
+    location = Column(
+        String(255),
+        nullable=True
+    )
+
+    cost_center = Column(
+        String(100),
+        nullable=True
+    )
+
+    required_by_date = Column(
+        String(100),
+        nullable=True
+    )
+
+    estimated_value = Column(
+        Float,
+        nullable=False
+    )
+
+    currency = Column(
+        String(20),
+        nullable=False
+    )
+
+    status = Column(
+        String(100),
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
 
     business_need_type = relationship(
-        "BusinessNeedType", 
+        "BusinessNeedType",
         back_populates="business_needs"
     )
+
     requester = relationship(
         "User",
         foreign_keys=[requester_id]
     )
+
     purchase_requisitions = relationship(
-        "PurchaseRequisition", back_populates="business_need", cascade="all, delete-orphan"
+        "PurchaseRequisition",
+        back_populates="business_need",
+        cascade="all, delete-orphan"
     )
 
 

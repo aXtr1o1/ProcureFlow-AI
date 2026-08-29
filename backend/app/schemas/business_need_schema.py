@@ -16,16 +16,34 @@ class BusinessNeedTypeResponse(BaseModel):
 
 class BusinessNeedCreate(BaseModel):
     business_need_type_id: int
-    title: str = Field(min_length=1, max_length=255)
-    description: Optional[str] = Field(default=None, max_length=2000)
+
+    title: str = Field(
+        min_length=1,
+        max_length=255
+    )
+
+    description: Optional[str] = Field(
+        default=None,
+        max_length=2000
+    )
+
     department: Optional[str] = None
     business_unit: Optional[str] = None
     project: Optional[str] = None
     location: Optional[str] = None
     cost_center: Optional[str] = None
     required_by_date: Optional[str] = None
-    estimated_value: float = Field(default=0, ge=0)
-    currency: str = Field(default="USD", min_length=3, max_length=20)
+
+    estimated_value: float = Field(
+        default=0,
+        ge=0
+    )
+
+    currency: Optional[str] = Field(
+        default=None,
+        min_length=3,
+        max_length=20,
+    )
 
 
 class BusinessNeedResponse(BaseModel):

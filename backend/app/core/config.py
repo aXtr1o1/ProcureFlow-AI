@@ -26,16 +26,18 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str
     ALGORITHM: str
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int 
 
-    # Canonical display and storage currency
-    DEFAULT_DISPLAY_CURRENCY: str = "USD"
-    FX_TO_USD_USD: float = 1.0
-    FX_TO_USD_ZAR: float = 1 / 18.50
-    FX_TO_USD_AED: float = 1 / 5.05
-    FX_TO_USD_EUR: float = 1 / 20.00
-    FX_TO_USD_GBP: float = 1 / 23.50
-    FX_TO_USD_SAR: float = 1 / 4.93
+   # Canonical default currency
+    DEFAULT_CURRENCY: str = "USD"
+
+    # FX conversion rates to USD
+    FX_TO_USD_USD: float
+    FX_TO_USD_ZAR: float
+    FX_TO_USD_AED: float
+    FX_TO_USD_EUR: float
+    FX_TO_USD_GBP: float
+    FX_TO_USD_SAR: float
 
     class Config:
         env_file = ".env"
