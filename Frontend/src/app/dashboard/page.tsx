@@ -14,6 +14,15 @@ import {
 import { fmtDate, type Invoice } from "@/lib/invoices";
 import { formatUsd } from "@/lib/currency";
 
+import {
+  getDashboardOverview,
+  getDashboardFunnel,
+  getDashboardSpend,
+  type DashboardOverview,
+  type DashboardFunnel,
+  type DashboardSpend,
+} from "@/lib/procurement";
+
 export default function DashboardPage() {
   const router = useRouter();
   const {
@@ -31,6 +40,13 @@ export default function DashboardPage() {
 
   const [dragging, setDragging] = useState(false);
   const [recent, setRecent] = useState<Invoice[]>([]);
+
+  const [dashboard, setDashboard] =
+    useState<DashboardOverview | null>(null);
+
+  const [dashboardLoading, setDashboardLoading] =
+    useState(true);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshRecent = useCallback(async () => {
@@ -44,11 +60,32 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const refreshDashboard = useCallback(async () => {
+    try {
+      setDashboardLoading(true);
+
+      const overview = await getDashboardOverview();
+
+      setDashboard(overview);
+    } catch (error) {
+      console.error(
+        "Failed to load dashboard data:",
+        error
+      );
+
+      setDashboard(null);
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshRecent();
+    void refreshDashboard();
 
     const onUpdate = () => {
       void refreshRecent();
+      void refreshDashboard();
     };
 
     window.addEventListener("invoices:updated", onUpdate);
@@ -56,12 +93,7 @@ export default function DashboardPage() {
     return () => {
       window.removeEventListener("invoices:updated", onUpdate);
     };
-  }, [refreshRecent]);
-
-  const stats = {
-    total: recent.length,
-    avgTime: "1.4s",
-  };
+  }, [refreshRecent, refreshDashboard]);
 
   const handleFiles = useCallback(
     async (files: FileList | null) => {
@@ -184,28 +216,218 @@ export default function DashboardPage() {
             </h1>
           </div>
 
-          {/* Summary statistics - above System Status */}
-          <section className="order-2 mx-auto w-full max-w-3xl lg:col-start-2 lg:row-start-1">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Dashboard KPIs */}
+          <section className="order-2 mx-auto w-full lg:col-span-2 lg:row-start-1">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+
               <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
                 <p className="font-label-md text-label-md text-on-surface-variant">
-                  Today&apos;s Total
+                  Business Needs
                 </p>
 
                 <h2 className="mt-2 text-3xl font-bold text-primary">
-                  {stats.total}
+                  {dashboardLoading
+                    ? "..."
+                    : dashboard?.total_business_needs ?? 0}
                 </h2>
               </div>
 
-              {/* <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
                 <p className="font-label-md text-label-md text-on-surface-variant">
-                  Avg. Time
+                  Purchase Requisitions
                 </p>
 
                 <h2 className="mt-2 text-3xl font-bold text-primary">
-                  {stats.avgTime}
+                  {dashboardLoading
+                    ? "..."
+                    : dashboard?.total_purchase_requisitions ?? 0}
                 </h2>
-              </div> */}
+              </div>
+
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  Purchase Orders
+                </p>
+
+                <h2 className="mt-2 text-3xl font-bold text-primary">
+                  {dashboardLoading
+                    ? "..."
+                    : dashboard?.total_purchase_orders ?? 0}
+                </h2>
+              </div>
+
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  Invoices
+                </p>
+
+                <h2 className="mt-2 text-3xl font-bold text-primary">
+                  {dashboardLoading
+                    ? "..."
+                    : dashboard?.total_invoices ?? 0}
+                </h2>
+              </div>
+
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  Goods Receipts
+                </p>
+
+                <h2 className="mt-2 text-3xl font-bold text-primary">
+                  {dashboardLoading
+                    ? "..."
+                    : dashboard?.total_goods_receipts ?? 0}
+                </h2>
+              </div>
+
+            </div>
+          </section>
+
+          {/* Procurement Workflow */}
+          <section className="order-3 w-full lg:col-span-2">
+            <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 shadow-md">
+
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h3 className="font-title-lg text-title-lg text-on-surface">
+                    Procurement Workflow
+                  </h3>
+
+                  <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
+                    Business Need → PR → PO → Goods Receipt → Invoice
+                  </p>
+                </div>
+
+                <span className="material-symbols-outlined text-primary">
+                  account_tree
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+
+                <div className="rounded-lg bg-surface-container-high/50 p-4">
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    Business Needs
+                  </p>
+
+                  <p className="mt-2 text-2xl font-bold text-primary">
+                    {dashboard?.total_business_needs ?? 0}
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-surface-container-high/50 p-4">
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    Purchase Requisitions
+                  </p>
+
+                  <p className="mt-2 text-2xl font-bold text-primary">
+                    {dashboard?.total_purchase_requisitions ?? 0}
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-surface-container-high/50 p-4">
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    Purchase Orders
+                  </p>
+
+                  <p className="mt-2 text-2xl font-bold text-primary">
+                    {dashboard?.total_purchase_orders ?? 0}
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-surface-container-high/50 p-4">
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    Goods Receipts
+                  </p>
+
+                  <p className="mt-2 text-2xl font-bold text-primary">
+                    {dashboard?.total_goods_receipts ?? 0}
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-surface-container-high/50 p-4">
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    Invoices
+                  </p>
+
+                  <p className="mt-2 text-2xl font-bold text-primary">
+                    {dashboard?.total_invoices ?? 0}
+                  </p>
+                </div>
+
+              </div>
+            </div>
+          </section>
+
+          {/* Spend Summary */}
+          <section className="order-4 w-full lg:col-span-2">
+            <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 shadow-md">
+
+              <div className="mb-6">
+                <h3 className="font-title-lg text-title-lg text-on-surface">
+                  Spend Summary
+                </h3>
+
+                <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
+                  Procurement and payment financial overview
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+                <div className="rounded-lg bg-surface-container-high/50 p-4">
+                  <p className="text-sm text-on-surface-variant">
+                    PO Value
+                  </p>
+
+                  <p className="mt-2 text-xl font-bold text-primary">
+                    {formatUsd(
+                      dashboard?.spend.total_po_value ?? 0,
+                      "USD"
+                    )}
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-surface-container-high/50 p-4">
+                  <p className="text-sm text-on-surface-variant">
+                    Invoice Value
+                  </p>
+
+                  <p className="mt-2 text-xl font-bold text-primary">
+                    {formatUsd(
+                      dashboard?.spend.total_invoice_value ?? 0,
+                      "USD"
+                    )}
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-surface-container-high/50 p-4">
+                  <p className="text-sm text-on-surface-variant">
+                    Paid Amount
+                  </p>
+
+                  <p className="mt-2 text-xl font-bold text-primary">
+                    {formatUsd(
+                      dashboard?.spend.total_paid_amount ?? 0,
+                      "USD"
+                    )}
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-surface-container-high/50 p-4">
+                  <p className="text-sm text-on-surface-variant">
+                    Pending Payment
+                  </p>
+
+                  <p className="mt-2 text-xl font-bold text-primary">
+                    {formatUsd(
+                      dashboard?.spend.total_pending_payment ?? 0,
+                      "USD"
+                    )}
+                  </p>
+                </div>
+
+              </div>
             </div>
           </section>
 
@@ -351,7 +573,7 @@ export default function DashboardPage() {
           {/* System Status card */}
           <section
             className="
-              order-4
+              order-5
               h-full
               w-full
               lg:col-start-2
@@ -546,7 +768,7 @@ export default function DashboardPage() {
           {recent.length > 0 && (
             <section
               className="
-                order-5
+                order-6
                 mx-auto
                 flex
                 w-full
