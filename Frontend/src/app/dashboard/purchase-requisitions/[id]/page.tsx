@@ -1,7 +1,6 @@
 "use client";
-
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 import {
   PurchaseRequisition,
@@ -19,6 +18,7 @@ import LineItemsTable from "@/components/procurement/LineItemsTable";
 
 export default function PRDetailsPage() {
   const params = useParams();
+  const router = useRouter();
 
   const id = Number(params.id);
 
@@ -328,20 +328,38 @@ export default function PRDetailsPage() {
             <button
               disabled={
                 actionLoading ||
-                !negotiatedAmount
+                !negotiatedAmount ||
+                Number(negotiatedAmount) <= 0
               }
-              onClick={() =>
-                execute(() =>
-                  recordNegotiation(
+              onClick={async () => {
+                setActionLoading(true);
+                setError("");
+
+                try {
+                  await recordNegotiation(
                     id,
                     Number(negotiatedAmount),
                     remarks
-                  )
-                )
-              }
-              className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-white"
+                  );
+
+                  router.push(
+                    `/dashboard/purchase-orders/create?purchaseRequisitionId=${id}`
+                  );
+                } catch (err) {
+                  setError(
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to record negotiation."
+                  );
+                } finally {
+                  setActionLoading(false);
+                }
+              }}
+              className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
             >
-              Record Negotiation
+              {actionLoading
+                ? "Recording..."
+                : "Record Negotiation"}
             </button>
           </div>
         )}

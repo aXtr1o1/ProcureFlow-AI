@@ -1,50 +1,84 @@
-/** Display and normalize amounts as United States Dollars (USD). */
+/**
+ * Display and normalize amounts as United States Dollars (USD).
+ *
+ * Currency conversion is handled by the backend.
+ * The frontend only formats the USD values returned by the API.
+ */
 
-const FX_TO_USD: Record<string, number> = {
-  USD: 1,
-  US$: 1,
-  ZAR: 1 / 18.5,
-  R: 1 / 18.5,
-  AED: 1 / 5.05,
-  EUR: 1 / 20.0,
-  GBP: 1 / 23.5,
-};
+export function normalizeCurrency(
+  code?: string | null
+): string {
+  if (!code) {
+    return "USD";
+  }
 
-export function normalizeCurrency(code?: string | null): string {
-  if (!code) return "USD";
-  const cleaned = String(code).trim().toUpperCase().replace(/[^A-Z$]/g, "");
-  if (!cleaned) return "USD";
-  if (cleaned === "US$" || cleaned === "$") return "USD";
+  const cleaned = String(code)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z$]/g, "");
+
+  if (!cleaned) {
+    return "USD";
+  }
+
+  if (
+    cleaned === "US$" ||
+    cleaned === "$"
+  ) {
+    return "USD";
+  }
+
+  if (
+    cleaned === "R" ||
+    cleaned === "RAND"
+  ) {
+    return "ZAR";
+  }
+
   return cleaned;
 }
 
-export function toUsd(
-  amount?: number | string | null,
-  currency?: string | null
-): number | null {
-  if (amount === null || amount === undefined || amount === "") return null;
-  const value = typeof amount === "number" ? amount : Number(amount);
-  if (!Number.isFinite(value)) return null;
-  const code = normalizeCurrency(currency);
-  const rate = FX_TO_USD[code] ?? 1;
-  return Math.round(value * rate * 100) / 100;
-}
-
+/**
+ * Format an amount that is already normalized to USD
+ * by the backend.
+ */
 export function formatUsd(
   amount?: number | string | null,
   currency?: string | null
 ): string {
-  const usd = toUsd(amount, currency);
-  if (usd === null) return "—";
+  if (
+    amount === null ||
+    amount === undefined ||
+    amount === ""
+  ) {
+    return "—";
+  }
+
+  const value =
+    typeof amount === "number"
+      ? amount
+      : Number(amount);
+
+  if (!Number.isFinite(value)) {
+    return "—";
+  }
+
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     currencyDisplay: "symbol",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(usd);
+  }).format(value);
 }
 
-export function currencyLabel(currency?: string | null): string {
+/**
+ * Display currency label.
+ *
+ * Backend-normalized monetary values are displayed as USD.
+ */
+export function currencyLabel(
+  currency?: string | null
+): string {
   return "USD";
 }

@@ -6,11 +6,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
 const NAV_LINKS = [
-  { href: "/dashboard", label: "Upload" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard/business-needs", label: "Business Needs" },
+  { href: "/dashboard/purchase-requisitions", label: "Purchase Requisitions" },
+  { href: "/dashboard/purchase-orders", label: "Purchase Orders" },
+  { href: "/dashboard/goods-receipts", label: "Goods Receipts" },
   { href: "/dashboard/invoices", label: "Invoices" },
   { href: "/dashboard/search", label: "Search" },
   { href: "/dashboard/assistant", label: "Assistant" },
-  { href: "/dashboard/summary", label: "Summary" },
 ];
 
 export default function Header() {

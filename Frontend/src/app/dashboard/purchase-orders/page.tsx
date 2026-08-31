@@ -80,7 +80,7 @@ export default function PurchaseOrdersPage() {
                 >
                   <td className="px-4 py-3">
                     <Link
-                      href={`/dashboard/purchase-orders/${po.id}`}
+                      href={`/dashboard/purchase-orders/${encodeURIComponent(po.po_number)}`}
                       className="font-medium text-blue-600"
                     >
                       {po.po_number}

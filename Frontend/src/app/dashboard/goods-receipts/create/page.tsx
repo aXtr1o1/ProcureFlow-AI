@@ -73,14 +73,14 @@ export default function CreateGoodsReceiptPage() {
 
     try {
       const po =
-        await getPurchaseOrder(
-          Number(purchaseOrderId)
-        );
+      await getPurchaseOrder(
+        purchaseOrderId
+      );
 
       setPurchaseOrder(po);
 
       setLineItems(
-        po.line_items.map((item) => ({
+        (po.line_items ?? []).map((item) => ({
           purchase_order_line_id:
             item.id,
 
@@ -305,16 +305,13 @@ export default function CreateGoodsReceiptPage() {
             </label>
 
             <input
-              type="number"
-              min="1"
+              type="text"
               value={purchaseOrderId}
               onChange={(event) =>
-                setPurchaseOrderId(
-                  event.target.value
-                )
+                setPurchaseOrderId(event.target.value)
               }
               className="w-full rounded-lg border px-3 py-2"
-              placeholder="PO ID"
+              placeholder="Enter PO Number"
             />
           </div>
 

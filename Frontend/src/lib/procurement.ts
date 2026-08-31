@@ -179,11 +179,11 @@ export interface PurchaseOrder {
   subtotal: number;
   tax: number;
   total_amount: number;
-  status: string;
+  status: PurchaseOrderStatus;
   created_by_id: number;
   created_at: string;
   updated_at: string;
-  line_items: PurchaseOrderLine[];
+  line_items?: PurchaseOrderLine[];
 }
 
 export interface GoodsReceiptLine {
@@ -369,7 +369,7 @@ export function recordNegotiation(
 
 export type PurchaseOrderStatus =
   | "Created"
-  | "Approval Pending"
+  | "Pending Approval"
   | "Approved"
   | "Rejected"
   | "Sent"
@@ -578,11 +578,25 @@ export function cancelPurchaseOrder(
    Goods Receipt API
 ========================================================== */
 
+export type GoodsReceiptStatus =
+  | "Draft"
+  | "Submitted"
+  | "Accepted"
+  | "Rejected";
+
+/* ----------------------------------------------------------
+   Get all Goods Receipts
+---------------------------------------------------------- */
+
 export function getGoodsReceipts() {
   return request<GoodsReceipt[]>(
     "/goods-receipts/"
   );
 }
+
+/* ----------------------------------------------------------
+   Get Goods Receipt by ID
+---------------------------------------------------------- */
 
 export function getGoodsReceipt(id: number) {
   return request<GoodsReceipt>(
@@ -590,12 +604,93 @@ export function getGoodsReceipt(id: number) {
   );
 }
 
+/* ----------------------------------------------------------
+   Create Goods Receipt
+---------------------------------------------------------- */
+
 export function createGoodsReceipt(payload: unknown) {
   return request<GoodsReceipt>(
     "/goods-receipts/",
     {
       method: "POST",
       body: JSON.stringify(payload),
+    }
+  );
+}
+
+/* ----------------------------------------------------------
+   Submit Goods Receipt
+   Draft -> Submitted
+---------------------------------------------------------- */
+
+export function submitGoodsReceipt(
+  receiptId: number
+) {
+  return request<GoodsReceipt>(
+    `/goods-receipts/${receiptId}/submit`,
+    {
+      method: "POST",
+    }
+  );
+}
+
+/* ----------------------------------------------------------
+   Accept Goods Receipt
+   Submitted -> Accepted
+---------------------------------------------------------- */
+
+export function acceptGoodsReceipt(
+  receiptId: number,
+  remarks?: string
+) {
+  return request<GoodsReceipt>(
+    `/goods-receipts/${receiptId}/accept`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        remarks: remarks || null,
+      }),
+    }
+  );
+}
+
+/* ----------------------------------------------------------
+   Reject Goods Receipt
+   Submitted -> Rejected
+---------------------------------------------------------- */
+
+export function rejectGoodsReceipt(
+  receiptId: number,
+  remarks?: string
+) {
+  return request<GoodsReceipt>(
+    `/goods-receipts/${receiptId}/reject`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        remarks: remarks || null,
+      }),
+    }
+  );
+}
+
+/* ----------------------------------------------------------
+   Update Goods Receipt Status
+---------------------------------------------------------- */
+
+export function updateGoodsReceiptStatus(
+  receiptId: number,
+  status: GoodsReceiptStatus,
+  remarks?: string
+) {
+  return request<GoodsReceipt>(
+    `/goods-receipts/${receiptId}/status`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        status,
+        remarks: remarks || null,
+      }),
     }
   );
 }

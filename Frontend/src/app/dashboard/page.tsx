@@ -1,44 +1,254 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+
 import { getInvoices } from "@/services/api";
-import {
-  STEPS,
-  STATUS_BG_COLOR,
-  STATUS_COLOR,
-  STATUS_ICON_COLOR,
-  STATUS_LABEL,
-  useInvoiceProcessing,
-} from "@/context/InvoiceProcessingContext";
 import { fmtDate, type Invoice } from "@/lib/invoices";
 import { formatUsd } from "@/lib/currency";
 
-import {
-  getDashboardOverview,
-  getDashboardFunnel,
-  getDashboardSpend,
-  type DashboardOverview,
-  type DashboardFunnel,
-  type DashboardSpend,
-} from "@/lib/procurement";
+/* ==========================================================
+   Dashboard Types
+========================================================== */
+
+type FunnelStage = {
+  count: number;
+  value: number;
+  average_time: number | null;
+  pending: number;
+  sla_breaches: number;
+};
+
+type DashboardOverview = {
+  kpis: {
+    total_procurement_value: number;
+    active_pos: number;
+    invoices_processed: number;
+    pending_invoices: number;
+    matched_invoices: number;
+    exception_rate: number;
+    pending_approval_value: number;
+    average_processing_time: number | null;
+    potential_savings: number;
+    overdue_payments: number;
+
+    total_business_needs: number;
+    total_purchase_requisitions: number;
+    total_purchase_orders: number;
+    total_goods_receipts: number;
+    total_invoices: number;
+    total_payments: number;
+    total_exceptions: number;
+
+    total_po_value: number;
+    total_invoice_value: number;
+    total_paid_amount: number;
+    total_pending_payment: number;
+  };
+
+  funnel: {
+    business_needs: FunnelStage;
+    purchase_requisitions: FunnelStage;
+    purchase_orders: FunnelStage;
+    goods_receipts: FunnelStage;
+    invoices: FunnelStage;
+    payments: FunnelStage;
+  };
+
+  business_need_status: Record<string, number>;
+  purchase_requisition_status: Record<string, number>;
+  purchase_order_status: Record<string, number>;
+  goods_receipt_status: Record<string, number>;
+  invoice_status: Record<string, number>;
+  payment_status: Record<string, number>;
+
+  po_intelligence: {
+    total_pos: number;
+    po_value: number;
+    open_pos: number;
+    closed_pos: number;
+    cancelled_pos: number;
+    pending_approvals: number;
+    average_po_creation_time: number | null;
+    average_po_approval_time: number | null;
+    po_to_invoice_conversion_ratio: number;
+    average_po_aging: number | null;
+    po_value_by_department: Record<string, number>;
+    po_value_by_vendor: Record<string, number>;
+  };
+
+  invoice_intelligence: {
+    total_invoices_received: number;
+    successfully_extracted: number;
+    extraction_failed: number;
+    extraction_confidence: number | null;
+    duplicate_invoices: number;
+    missing_fields: number;
+    po_linked_invoices: number;
+    non_po_invoices: number;
+    processing_time: number | null;
+    manual_review_time: number | null;
+    matched_invoices: number;
+    unmatched_invoices: number;
+    exception_count: number;
+    exception_rate: number;
+  };
+
+  vendor_intelligence: {
+    vendors: Array<{
+      vendor_name: string;
+      overall_score: number | null;
+      on_time_delivery: number | null;
+      invoice_accuracy: number | null;
+      po_compliance: number | null;
+      price_variance: number;
+      exception_rate: number;
+      payment_dispute: number | null;
+      total_spend: number;
+      number_of_pos: number;
+      number_of_invoices: number;
+      average_invoice_value: number;
+      payment_terms: string | null;
+      average_payment_time: number | null;
+    }>;
+    total_vendor_spend: number;
+    total_vendors: number;
+  };
+
+  spend_analytics: {
+    total_spend: number;
+    by_department: Record<string, number>;
+    by_business_unit: Record<string, number>;
+    by_category: Record<string, number>;
+    by_vendor: Record<string, number>;
+    by_location: Record<string, number>;
+    by_month: Record<string, number>;
+    by_quarter: Record<string, number>;
+    by_project: Record<string, number>;
+    by_cost_center: Record<string, number>;
+    total_po_value: number;
+    total_invoice_value: number;
+    total_paid_amount: number;
+    total_pending_payment: number;
+    total_exception_value: number;
+    potential_savings: number;
+  };
+
+  po_trends: {
+    trends: Array<{
+      period: string;
+      po_value: number;
+      invoice_value: number;
+      payment_value: number;
+      number_of_pos: number;
+      number_of_invoices: number;
+      exceptions: number;
+      savings: number;
+    }>;
+  };
+
+  spend: {
+    total_po_value: number;
+    total_invoice_value: number;
+    total_paid_amount: number;
+    total_pending_payment: number;
+    total_exception_value: number;
+    potential_savings: number;
+    overdue_payment_value: number;
+  };
+};
+
+/* ==========================================================
+   Dashboard API
+========================================================== */
+
+async function getDashboardOverview(): Promise<DashboardOverview> {
+  const token =
+    typeof window !== "undefined"
+      ? localStorage.getItem("access_token") ||
+        localStorage.getItem("token") ||
+        localStorage.getItem("accessToken")
+      : null;
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+  const response = await fetch(
+    `${apiUrl}/dashboard/overview`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token
+          ? {
+              Authorization: `Bearer ${token}`,
+            }
+          : {}),
+      },
+      cache: "no-store",
+    }
+  );
+
+  if (!response.ok) {
+    let message = `Failed to load dashboard overview: ${response.status}`;
+
+    try {
+      const errorData = await response.json();
+
+      if (errorData?.detail) {
+        message = String(errorData.detail);
+      }
+    } catch {
+      // Keep default error message.
+    }
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as DashboardOverview;
+}
+
+/* ==========================================================
+   Helpers
+========================================================== */
+
+function getStatusCount(
+  statuses: Record<string, number>,
+  names: string[]
+): number {
+  return names.reduce(
+    (total, name) => total + (statuses[name] ?? 0),
+    0
+  );
+}
+
+function formatPercent(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+function formatStageName(key: string): string {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatMetric(
+  value: number | null | undefined,
+  suffix = ""
+): string {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+
+  return `${value}${suffix}`;
+}
+
+/* ==========================================================
+   Dashboard Page
+========================================================== */
 
 export default function DashboardPage() {
   const router = useRouter();
-  const {
-    fileName,
-    stepStates,
-    currentStatus,
-    currentStatusRaw,
-    currentStepIndex,
-    running,
-    completed,
-    notice,
-    clearNotice,
-    startProcessing,
-  } = useInvoiceProcessing();
 
-  const [dragging, setDragging] = useState(false);
   const [recent, setRecent] = useState<Invoice[]>([]);
 
   const [dashboard, setDashboard] =
@@ -47,24 +257,43 @@ export default function DashboardPage() {
   const [dashboardLoading, setDashboardLoading] =
     useState(true);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dashboardError, setDashboardError] =
+    useState<string | null>(null);
+
+  /* ========================================================
+     Recent Invoices
+  ======================================================== */
 
   const refreshRecent = useCallback(async () => {
     try {
       const response = await getInvoices();
-      const list = Array.isArray(response?.data) ? response.data : [];
+
+      const list = Array.isArray(response?.data)
+        ? response.data
+        : [];
+
       setRecent(list.slice(0, 6));
     } catch (error) {
-      console.error(error);
+      console.error(
+        "Failed to load recent invoices:",
+        error
+      );
+
       setRecent([]);
     }
   }, []);
 
+  /* ========================================================
+     Dashboard
+  ======================================================== */
+
   const refreshDashboard = useCallback(async () => {
     try {
       setDashboardLoading(true);
+      setDashboardError(null);
 
-      const overview = await getDashboardOverview();
+      const overview =
+        await getDashboardOverview();
 
       setDashboard(overview);
     } catch (error) {
@@ -74,6 +303,12 @@ export default function DashboardPage() {
       );
 
       setDashboard(null);
+
+      setDashboardError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load dashboard data."
+      );
     } finally {
       setDashboardLoading(false);
     }
@@ -88,58 +323,347 @@ export default function DashboardPage() {
       void refreshDashboard();
     };
 
-    window.addEventListener("invoices:updated", onUpdate);
+    window.addEventListener(
+      "invoices:updated",
+      onUpdate
+    );
 
     return () => {
-      window.removeEventListener("invoices:updated", onUpdate);
+      window.removeEventListener(
+        "invoices:updated",
+        onUpdate
+      );
     };
   }, [refreshRecent, refreshDashboard]);
 
-  const handleFiles = useCallback(
-    async (files: FileList | null) => {
-      if (running || !files || files.length === 0) {
-        return;
-      }
+  /* ========================================================
+     Executive Metrics
+  ======================================================== */
 
-      const pdfFiles = Array.from(files).filter((file) => {
-        return (
-          file.type === "application/pdf" ||
-          file.name.toLowerCase().endsWith(".pdf")
-        );
-      });
+  const executiveMetrics = useMemo(() => {
+    const kpis = dashboard?.kpis;
 
-      if (pdfFiles.length === 0) {
-        return;
-      }
-
-      for (const file of pdfFiles) {
-        await startProcessing(file);
-      }
-    },
-    [running, startProcessing],
-  );
-
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    setDragging(false);
-
-    if (running) {
-      return;
+    if (!kpis) {
+      return {
+        totalProcurementValue: 0,
+        activePOs: 0,
+        invoicesProcessed: 0,
+        pendingInvoices: 0,
+        matchedInvoices: 0,
+        exceptionRate: 0,
+        pendingApprovalValue: 0,
+        averageProcessingTime: null,
+        potentialSavings: 0,
+        overduePayments: 0,
+      };
     }
 
-    /*
-     * Pass the actual dropped FileList.
-     * The previous implementation created an empty DataTransfer object,
-     * so the dropped PDF was not passed into handleFiles.
-     */
-    void handleFiles(event.dataTransfer.files);
-  };
+    return {
+      totalProcurementValue:
+        kpis.total_procurement_value ??
+        kpis.total_po_value ??
+        0,
+
+      activePOs:
+        kpis.active_pos ?? 0,
+
+      invoicesProcessed:
+        kpis.invoices_processed ??
+        kpis.total_invoices ??
+        0,
+
+      pendingInvoices:
+        kpis.pending_invoices ?? 0,
+
+      matchedInvoices:
+        kpis.matched_invoices ?? 0,
+
+      exceptionRate:
+        kpis.exception_rate ?? 0,
+
+      pendingApprovalValue:
+        kpis.pending_approval_value ?? 0,
+
+      averageProcessingTime:
+        kpis.average_processing_time ?? null,
+
+      potentialSavings:
+        kpis.potential_savings ?? 0,
+
+      overduePayments:
+        kpis.overdue_payments ?? 0,
+    };
+  }, [dashboard]);
+
+  /* ========================================================
+     Workflow Status
+  ======================================================== */
+
+  const statusSections = [
+    {
+      title: "Business Needs",
+      data: dashboard?.business_need_status,
+    },
+    {
+      title: "Purchase Requisitions",
+      data: dashboard?.purchase_requisition_status,
+    },
+    {
+      title: "Purchase Orders",
+      data: dashboard?.purchase_order_status,
+    },
+    {
+      title: "Goods Receipts",
+      data: dashboard?.goods_receipt_status,
+    },
+    {
+      title: "Invoices",
+      data: dashboard?.invoice_status,
+    },
+    {
+      title: "Payments",
+      data: dashboard?.payment_status,
+    },
+  ];
+
+  /* ========================================================
+     Procurement Navigation
+  ======================================================== */
+
+  const procurementModules = [
+    {
+      title: "Business Needs",
+      description:
+        "Create and manage business requirements.",
+      icon: "assignment",
+      href: "/dashboard/business-needs",
+    },
+    {
+      title: "Purchase Requisitions",
+      description:
+        "Create, submit and approve requisitions.",
+      icon: "request_quote",
+      href: "/dashboard/purchase-requisitions",
+    },
+    {
+      title: "Purchase Orders",
+      description:
+        "Create and manage purchase orders.",
+      icon: "receipt_long",
+      href: "/dashboard/purchase-orders",
+    },
+    {
+      title: "Goods Receipts",
+      description:
+        "Record and manage received goods.",
+      icon: "inventory_2",
+      href: "/dashboard/goods-receipts",
+    },
+  ];
+
+  /* ========================================================
+     Executive KPI Cards
+  ======================================================== */
+
+  const executiveKpis = [
+    {
+      label: "Total Procurement Value",
+      value: dashboardLoading
+        ? "..."
+        : formatUsd(
+            executiveMetrics.totalProcurementValue,
+            "USD"
+          ),
+      description:
+        "Total value of purchase orders",
+    },
+    {
+      label: "Active POs",
+      value: dashboardLoading
+        ? "..."
+        : executiveMetrics.activePOs,
+      description:
+        "Currently open purchase orders",
+    },
+    {
+      label: "Invoices Processed",
+      value: dashboardLoading
+        ? "..."
+        : executiveMetrics.invoicesProcessed,
+      description:
+        "Total invoices processed",
+    },
+    {
+      label: "Pending Invoices",
+      value: dashboardLoading
+        ? "..."
+        : executiveMetrics.pendingInvoices,
+      description:
+        "Invoices waiting for action",
+    },
+    {
+      label: "Matched Invoices",
+      value: dashboardLoading
+        ? "..."
+        : executiveMetrics.matchedInvoices,
+      description:
+        "Successfully matched invoices",
+    },
+    {
+      label: "Exception Rate",
+      value: dashboardLoading
+        ? "..."
+        : formatPercent(
+            executiveMetrics.exceptionRate
+          ),
+      description:
+        "Invoices requiring intervention",
+    },
+    {
+      label: "Pending Approval",
+      value: dashboardLoading
+        ? "..."
+        : formatUsd(
+            executiveMetrics.pendingApprovalValue,
+            "USD"
+          ),
+      description:
+        "Value waiting for approval",
+    },
+    {
+      label: "Average Processing Time",
+      value: dashboardLoading
+        ? "..."
+        : formatMetric(
+            executiveMetrics.averageProcessingTime,
+            " days"
+          ),
+      description:
+        "End-to-end processing time",
+    },
+    {
+      label: "Potential Savings",
+      value: dashboardLoading
+        ? "..."
+        : formatUsd(
+            executiveMetrics.potentialSavings,
+            "USD"
+          ),
+      description:
+        "Identified negotiation or price savings",
+    },
+    {
+      label: "Overdue Payments",
+      value: dashboardLoading
+        ? "..."
+        : formatUsd(
+            executiveMetrics.overduePayments,
+            "USD"
+          ),
+      description:
+        "Payments beyond agreed terms",
+    },
+  ];
+
+  /* ========================================================
+     Procurement Cycle Funnel
+  ======================================================== */
+
+  const funnelStages = [
+    {
+      label: "Business Needs",
+      stage: dashboard?.funnel?.business_needs,
+      href: "/dashboard/business-needs",
+    },
+    {
+      label: "Purchase Requisitions",
+      stage:
+        dashboard?.funnel?.purchase_requisitions,
+      href: "/dashboard/purchase-requisitions",
+    },
+    {
+      label: "Purchase Orders",
+      stage:
+        dashboard?.funnel?.purchase_orders,
+      href: "/dashboard/purchase-orders",
+    },
+    {
+      label: "Goods Receipts",
+      stage:
+        dashboard?.funnel?.goods_receipts,
+      href: "/dashboard/goods-receipts",
+    },
+    {
+      label: "Invoices",
+      stage:
+        dashboard?.funnel?.invoices,
+      href: "/dashboard/invoices",
+    },
+    {
+      label: "Payments",
+      stage:
+        dashboard?.funnel?.payments,
+      href: "#",
+    },
+  ];
+
+  /* ========================================================
+     Analytics Navigation
+  ======================================================== */
+
+  const analyticsModules = [
+    {
+      title: "Procurement Cycle",
+      description:
+        "Count, value, average time, pending items and SLA breaches.",
+      icon: "account_tree",
+      href: "/dashboard/procurement-funnel",
+    },
+    {
+      title: "PO Intelligence",
+      description:
+        "PO value, approvals, aging, department and vendor analysis.",
+      icon: "analytics",
+      href: "/dashboard/po-intelligence",
+    },
+    {
+      title: "Invoice Intelligence",
+      description:
+        "Extraction, matching, duplicates, exceptions and processing analytics.",
+      icon: "receipt_long",
+      href: "/dashboard/invoice-intelligence",
+    },
+    {
+      title: "Vendor Intelligence",
+      description:
+        "Vendor performance, compliance, spend and price variance.",
+      icon: "storefront",
+      href: "/dashboard/vendor-intelligence",
+    },
+    {
+      title: "Spend Analytics",
+      description:
+        "Analyze spend by department, business unit, category, vendor and location.",
+      icon: "payments",
+      href: "/dashboard/spend-analytics",
+    },
+    {
+      title: "PO Trend Analytics",
+      description:
+        "Track PO, invoice, payment, exceptions and savings over time.",
+      icon: "show_chart",
+      href: "/dashboard/po-trends",
+    },
+  ];
+
+  /* ========================================================
+     Render
+  ======================================================== */
 
   return (
-    <div className="flex w-full flex-col">
-      {/* Background decoration */}
+    <div className="min-h-screen w-full bg-surface">
+
+      {/* Background */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div className="absolute -left-[5%] -top-[10%] h-[40%] w-[40%] rounded-full bg-primary/5 blur-[120px]" />
 
@@ -147,671 +671,501 @@ export default function DashboardPage() {
       </div>
 
       <main className="relative z-10 mx-auto w-full max-w-container-max px-margin-desktop py-12">
-        {notice && (
-          <div
-            role="alert"
-            className={`mb-6 flex items-start gap-4 rounded-xl border p-4 shadow-md ${
-              notice.type === "duplicate"
-                ? "border-yellow-300 bg-yellow-50 text-yellow-900"
-                : notice.type === "error"
-                  ? "border-red-300 bg-red-50 text-red-900"
-                  : "border-blue-300 bg-blue-50 text-blue-900"
-            }`}
-          >
-            <span className="material-symbols-outlined mt-0.5 shrink-0 text-[22px]">
-              {notice.type === "duplicate"
-                ? "content_copy"
-                : notice.type === "error"
-                  ? "error"
-                  : "info"}
-            </span>
-            <div className="min-w-0 flex-1">
+
+        {/* ==================================================
+            Header
+        ================================================== */}
+
+        <section className="mb-8">
+          <h1 className="font-display-lg text-display-lg text-on-surface">
+            Procurement Dashboard
+          </h1>
+
+          <p className="mt-2 max-w-3xl font-body-md text-body-md text-on-surface-variant">
+            Executive view of the complete procurement
+            lifecycle from Business Need to Payment.
+          </p>
+        </section>
+
+        {/* ==================================================
+            Error
+        ================================================== */}
+
+        {dashboardError && (
+          <div className="mb-8 flex items-start justify-between gap-4 rounded-xl border border-red-300 bg-red-50 p-4 text-red-900">
+            <div>
               <p className="font-title-lg text-title-lg font-semibold">
-                {notice.title}
+                Dashboard data unavailable
               </p>
-              <p className="mt-1 font-body-md text-body-md whitespace-pre-wrap">
-                {notice.message}
+
+              <p className="mt-1 font-body-md text-body-md">
+                {dashboardError}
               </p>
             </div>
+
             <button
               type="button"
-              onClick={clearNotice}
-              className="shrink-0 rounded-md px-2 py-1 font-label-md text-label-md opacity-70 hover:opacity-100"
-              aria-label="Dismiss message"
+              onClick={() =>
+                void refreshDashboard()
+              }
+              className="rounded-lg bg-red-600 px-4 py-2 font-label-md text-label-md text-white hover:bg-red-700"
             >
-              Close
+              Retry
             </button>
           </div>
         )}
 
-        {/*
-         * Desktop layout:
-         *
-         * Row 1:
-         * Upload heading | Summary statistics
-         *
-         * Row 2:
-         * Upload card    | System Status
-         *
-         * Row 3:
-         * Recent invoices
-         *
-         * Because the upload card and System Status are in the same grid row,
-         * they begin at exactly the same vertical position.
-         */}
-        <div className="grid grid-cols-1 items-stretch gap-x-8 gap-y-8 lg:grid-cols-2">
-          {/* Upload page heading */}
-          <div
-            className="
-              order-1
-              flex
-              flex-col
-              gap-2
-              lg:col-start-1
-              lg:row-start-1
-            "
-          >
-            <h1 className="font-display-lg text-display-lg text-on-surface">
-              Upload Invoice
-            </h1>
+        {/* ==================================================
+            Executive Overview
+        ================================================== */}
+
+        <section className="mb-8">
+          <div className="mb-4">
+            <h2 className="font-title-lg text-title-lg text-on-surface">
+              Executive Overview
+            </h2>
+
+            <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
+              Key procurement performance indicators.
+            </p>
           </div>
 
-          {/* Dashboard KPIs */}
-          <section className="order-2 mx-auto w-full lg:col-span-2 lg:row-start-1">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-
-              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {executiveKpis.map((kpi) => (
+              <div
+                key={kpi.label}
+                className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm"
+              >
                 <p className="font-label-md text-label-md text-on-surface-variant">
-                  Business Needs
+                  {kpi.label}
                 </p>
 
-                <h2 className="mt-2 text-3xl font-bold text-primary">
-                  {dashboardLoading
-                    ? "..."
-                    : dashboard?.total_business_needs ?? 0}
-                </h2>
-              </div>
-
-              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
-                <p className="font-label-md text-label-md text-on-surface-variant">
-                  Purchase Requisitions
+                <p className="mt-2 text-2xl font-bold text-primary">
+                  {kpi.value}
                 </p>
 
-                <h2 className="mt-2 text-3xl font-bold text-primary">
-                  {dashboardLoading
-                    ? "..."
-                    : dashboard?.total_purchase_requisitions ?? 0}
-                </h2>
-              </div>
-
-              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
-                <p className="font-label-md text-label-md text-on-surface-variant">
-                  Purchase Orders
+                <p className="mt-2 text-xs text-on-surface-variant">
+                  {kpi.description}
                 </p>
-
-                <h2 className="mt-2 text-3xl font-bold text-primary">
-                  {dashboardLoading
-                    ? "..."
-                    : dashboard?.total_purchase_orders ?? 0}
-                </h2>
               </div>
+            ))}
+          </div>
+        </section>
 
-              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
-                <p className="font-label-md text-label-md text-on-surface-variant">
-                  Invoices
-                </p>
+        {/* ==================================================
+            Procurement Modules
+        ================================================== */}
 
-                <h2 className="mt-2 text-3xl font-bold text-primary">
-                  {dashboardLoading
-                    ? "..."
-                    : dashboard?.total_invoices ?? 0}
-                </h2>
-              </div>
+        <section className="mb-8">
+          <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 shadow-md">
 
-              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-high/50 p-5 shadow-sm">
-                <p className="font-label-md text-label-md text-on-surface-variant">
-                  Goods Receipts
-                </p>
+            <div className="mb-6">
+              <h2 className="font-title-lg text-title-lg text-on-surface">
+                Procurement
+              </h2>
 
-                <h2 className="mt-2 text-3xl font-bold text-primary">
-                  {dashboardLoading
-                    ? "..."
-                    : dashboard?.total_goods_receipts ?? 0}
-                </h2>
-              </div>
-
+              <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
+                Access and manage each stage of the procurement workflow.
+              </p>
             </div>
-          </section>
 
-          {/* Procurement Workflow */}
-          <section className="order-3 w-full lg:col-span-2">
-            <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 shadow-md">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {procurementModules.map((module) => (
+                <button
+                  key={module.title}
+                  type="button"
+                  onClick={() =>
+                    router.push(module.href)
+                  }
+                  className="group rounded-xl border border-outline-variant/20 bg-surface-container-high/40 p-5 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+                >
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <span className="material-symbols-outlined">
+                      {module.icon}
+                    </span>
+                  </div>
 
-              <div className="mb-6 flex items-center justify-between">
-                <div>
                   <h3 className="font-title-lg text-title-lg text-on-surface">
-                    Procurement Workflow
+                    {module.title}
                   </h3>
 
-                  <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
-                    Business Need → PR → PO → Goods Receipt → Invoice
+                  <p className="mt-1 font-label-md text-label-md text-on-surface-variant">
+                    {module.description}
                   </p>
-                </div>
-
-                <span className="material-symbols-outlined text-primary">
-                  account_tree
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-
-                <div className="rounded-lg bg-surface-container-high/50 p-4">
-                  <p className="font-label-md text-label-md text-on-surface-variant">
-                    Business Needs
-                  </p>
-
-                  <p className="mt-2 text-2xl font-bold text-primary">
-                    {dashboard?.total_business_needs ?? 0}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-surface-container-high/50 p-4">
-                  <p className="font-label-md text-label-md text-on-surface-variant">
-                    Purchase Requisitions
-                  </p>
-
-                  <p className="mt-2 text-2xl font-bold text-primary">
-                    {dashboard?.total_purchase_requisitions ?? 0}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-surface-container-high/50 p-4">
-                  <p className="font-label-md text-label-md text-on-surface-variant">
-                    Purchase Orders
-                  </p>
-
-                  <p className="mt-2 text-2xl font-bold text-primary">
-                    {dashboard?.total_purchase_orders ?? 0}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-surface-container-high/50 p-4">
-                  <p className="font-label-md text-label-md text-on-surface-variant">
-                    Goods Receipts
-                  </p>
-
-                  <p className="mt-2 text-2xl font-bold text-primary">
-                    {dashboard?.total_goods_receipts ?? 0}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-surface-container-high/50 p-4">
-                  <p className="font-label-md text-label-md text-on-surface-variant">
-                    Invoices
-                  </p>
-
-                  <p className="mt-2 text-2xl font-bold text-primary">
-                    {dashboard?.total_invoices ?? 0}
-                  </p>
-                </div>
-
-              </div>
+                </button>
+              ))}
             </div>
-          </section>
+          </div>
+        </section>
 
-          {/* Spend Summary */}
-          <section className="order-4 w-full lg:col-span-2">
-            <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 shadow-md">
+        {/* ==================================================
+            Procurement Intelligence Navigation
+        ================================================== */}
 
-              <div className="mb-6">
-                <h3 className="font-title-lg text-title-lg text-on-surface">
-                  Spend Summary
-                </h3>
+        <section className="mb-8">
+          <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 shadow-md">
+
+            <div className="mb-6">
+              <h2 className="font-title-lg text-title-lg text-on-surface">
+                Procurement Intelligence
+              </h2>
+
+              <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
+                Detailed analytics and business intelligence.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {analyticsModules.map((item) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  onClick={() =>
+                    router.push(item.href)
+                  }
+                  className="group rounded-xl border border-outline-variant/20 bg-surface-container-high/40 p-5 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+                >
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <span className="material-symbols-outlined">
+                      {item.icon}
+                    </span>
+                  </div>
+
+                  <h3 className="font-title-lg text-title-lg text-on-surface">
+                    {item.title}
+                  </h3>
+
+                  <p className="mt-1 font-label-md text-label-md text-on-surface-variant">
+                    {item.description}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ==================================================
+            Procurement Cycle Funnel
+        ================================================== */}
+
+        <section className="mb-8">
+          <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 shadow-md">
+
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="font-title-lg text-title-lg text-on-surface">
+                  Procurement Cycle Funnel
+                </h2>
 
                 <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
-                  Procurement and payment financial overview
+                  Business Need → Purchase Requisition →
+                  Purchase Order → Goods Receipt → Invoice →
+                  Payment
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-
-                <div className="rounded-lg bg-surface-container-high/50 p-4">
-                  <p className="text-sm text-on-surface-variant">
-                    PO Value
-                  </p>
-
-                  <p className="mt-2 text-xl font-bold text-primary">
-                    {formatUsd(
-                      dashboard?.spend.total_po_value ?? 0,
-                      "USD"
-                    )}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-surface-container-high/50 p-4">
-                  <p className="text-sm text-on-surface-variant">
-                    Invoice Value
-                  </p>
-
-                  <p className="mt-2 text-xl font-bold text-primary">
-                    {formatUsd(
-                      dashboard?.spend.total_invoice_value ?? 0,
-                      "USD"
-                    )}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-surface-container-high/50 p-4">
-                  <p className="text-sm text-on-surface-variant">
-                    Paid Amount
-                  </p>
-
-                  <p className="mt-2 text-xl font-bold text-primary">
-                    {formatUsd(
-                      dashboard?.spend.total_paid_amount ?? 0,
-                      "USD"
-                    )}
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-surface-container-high/50 p-4">
-                  <p className="text-sm text-on-surface-variant">
-                    Pending Payment
-                  </p>
-
-                  <p className="mt-2 text-xl font-bold text-primary">
-                    {formatUsd(
-                      dashboard?.spend.total_pending_payment ?? 0,
-                      "USD"
-                    )}
-                  </p>
-                </div>
-
-              </div>
-            </div>
-          </section>
-
-          {/* Upload card */}
-          <section
-            className="
-              order-3
-              h-full
-              w-full
-              lg:col-start-1
-              lg:row-start-2
-            "
-          >
-            <div className="h-full rounded-xl bg-surface-container-lowest p-1 shadow-xl">
-              <div
-                onDragEnter={(event) => {
-                  event.preventDefault();
-
-                  if (!running) {
-                    setDragging(true);
-                  }
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault();
-
-                  if (!running) {
-                    setDragging(true);
-                  }
-                }}
-                onDragLeave={(event) => {
-                  event.preventDefault();
-
-                  /*
-                   * Prevent child elements inside the upload card from
-                   * incorrectly triggering drag leave.
-                   */
-                  if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-                    setDragging(false);
-                  }
-                }}
-                onDrop={handleDrop}
-                onClick={() => {
-                  if (!running) {
-                    fileInputRef.current?.click();
-                  }
-                }}
-                className={`group relative flex h-full min-h-[490px] flex-col items-center justify-center rounded-lg border-2 border-dashed bg-surface p-12 text-center transition-all duration-300 ${
-                  running
-                    ? "cursor-not-allowed opacity-70"
-                    : "cursor-pointer"
-                } ${
-                  dragging
-                    ? "border-primary bg-primary/5"
-                    : "border-outline-variant/50 hover:border-primary/50"
-                }`}
+              <button
+                type="button"
+                onClick={() =>
+                  router.push(
+                    "/dashboard/procurement-funnel"
+                  )
+                }
+                className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary hover:bg-primary/20"
+                title="Open procurement funnel"
               >
-                <input
-                  ref={fileInputRef}
-                  className="hidden"
-                  accept=".pdf,application/pdf"
-                  type="file"
-                  multiple
-                  disabled={running}
-                  onChange={(event) => {
-                    const selectedFiles = event.target.files;
-
-                    void handleFiles(selectedFiles);
-
-                    /*
-                     * Reset the input so the same PDF can be selected again.
-                     */
-                    event.target.value = "";
-                  }}
-                />
-
-                <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-primary-container/30 text-primary transition-transform duration-500 group-hover:scale-110">
-                  <span
-                    className="material-symbols-outlined text-[40px]"
-                    style={{
-                      fontVariationSettings: '"wght" 300',
-                    }}
-                  >
-                    cloud_upload
-                  </span>
-                </div>
-
-                <h3 className="mb-2 font-headline-md text-headline-md text-on-surface">
-                  {running
-                    ? "Processing PDFs..."
-                    : "Drag & Drop Invoice Here"}
-                </h3>
-
-                <p className="mb-8 font-body-md text-body-md text-on-surface-variant">
-                  {running
-                    ? "Please wait until the current processing is completed."
-                    : "Select one or more PDF files to start the extraction process."}
-                </p>
-
-                <div className="mb-8 flex w-full max-w-xs items-center gap-4">
-                  <div className="h-px flex-1 bg-outline-variant/30" />
-
-                  <span className="font-label-md text-label-md text-outline">
-                    OR
-                  </span>
-
-                  <div className="h-px flex-1 bg-outline-variant/30" />
-                </div>
-
-                <button
-                  type="button"
-                  disabled={running}
-                  onClick={(event) => {
-                    event.stopPropagation();
-
-                    if (!running) {
-                      fileInputRef.current?.click();
-                    }
-                  }}
-                  className="rounded-lg bg-primary px-8 py-3 font-title-lg text-title-lg text-on-primary shadow-md transition-all hover:bg-primary/90 hover:shadow-lg active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {running ? "Processing..." : "Browse Files"}
-                </button>
-
-                {fileName && (
-                  <p className="mt-4 max-w-full break-all font-label-md text-label-md text-on-surface-variant">
-                    Selected: {fileName}
-                  </p>
-                )}
-
-                <div className="mt-8 flex items-center gap-6 text-on-surface-variant/60">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px]">
-                      picture_as_pdf
-                    </span>
-
-                    <span className="font-label-md text-label-md">PDF</span>
-                  </div>
-                </div>
-              </div>
+                <span className="material-symbols-outlined">
+                  open_in_new
+                </span>
+              </button>
             </div>
-          </section>
 
-          {/* System Status card */}
-          <section
-            className="
-              order-5
-              h-full
-              w-full
-              lg:col-start-2
-              lg:row-start-2
-            "
-          >
-            <div
-              className={`h-full min-h-[490px] rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-8 shadow-md transition-all duration-500 ${
-                !fileName ? "pointer-events-none opacity-60 grayscale" : ""
-              }`}
-            >
-              <div className="mb-8 flex items-center justify-between gap-4">
-                <h3 className="flex items-center gap-3 font-title-lg text-title-lg text-on-surface">
-                  <span className="material-symbols-outlined text-primary">
-                    settings_backup_restore
-                  </span>
-
-                  System Status
-                </h3>
-
-                {notice?.type === "duplicate" ? (
-                  <span className="whitespace-nowrap font-label-md text-yellow-700">
-                    Duplicate
-                  </span>
-                ) : completed ? (
-                  <span className="whitespace-nowrap font-label-md text-success">
-                    Completed
-                  </span>
-                ) : running ? (
-                  <span className="whitespace-nowrap font-label-md text-primary">
-                    Processing…
-                  </span>
-                ) : (
-                  <span className="whitespace-nowrap font-label-md text-on-surface-variant/60">
-                    Waiting for file
-                  </span>
-                )}
-              </div>
-
-              <div
-                className={`mb-6 rounded-lg border-2 border-outline-variant/30 p-4 transition-all duration-500 ${
-                  running
-                    ? STATUS_BG_COLOR[currentStatusRaw] ||
-                      "bg-surface-container-high/40"
-                    : "bg-surface-container-high/40"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                      running && currentStepIndex >= 0
-                        ? STATUS_ICON_COLOR[currentStatusRaw] || "text-primary"
-                        : "text-on-surface-variant/40"
-                    }`}
-                  >
-                    {running && currentStepIndex >= 0 ? (
-                      <span className="material-symbols-outlined text-[18px]">
-                        {currentStepIndex === 0
-                          ? "cloud_upload"
-                          : currentStepIndex === 1
-                            ? "description"
-                            : currentStepIndex === 2
-                              ? "verified_user"
-                              : currentStepIndex === 3
-                                ? "pending_actions"
-                                : "check_circle"}
-                      </span>
-                    ) : (
-                      <span className="material-symbols-outlined text-[18px]">
-                        schedule
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-label-md text-label-md text-on-surface-variant">
-                      Current stage
-                    </p>
-                    <p
-                      className={`mt-1 font-title-lg text-title-lg transition-colors duration-300 ${
-                        running && currentStepIndex >= 0
-                          ? STATUS_ICON_COLOR[currentStatusRaw] ||
-                            "text-on-surface"
-                          : "text-on-surface"
-                      }`}
-                    >
-                      {currentStatus}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {running && (
-                <div className="mb-6 flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-outline-variant/20">
-                      <div
-                        className="h-full transition-all duration-500 ease-out"
-                        style={{
-                          width: `${((currentStepIndex + 1) / STEPS.length) * 100}%`,
-                          backgroundColor:
-                            currentStepIndex === 0
-                              ? "rgb(99, 102, 241)"
-                              : currentStepIndex === 1
-                                ? "rgb(59, 130, 246)"
-                                : currentStepIndex === 2
-                                  ? "rgb(34, 197, 94)"
-                                  : currentStepIndex === 3
-                                    ? "rgb(168, 85, 247)"
-                                    : "rgb(34, 197, 94)",
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <span className="whitespace-nowrap font-label-md text-label-md text-on-surface-variant">
-                    {currentStepIndex + 1} of {STEPS.length}
-                  </span>
-                </div>
-              )}
-
-              <div className="relative space-y-8">
-                <div className="absolute bottom-2 left-3 top-2 w-[2px] bg-outline-variant/20" />
-
-                {STEPS.map((step, index) => {
-                  const state = stepStates[index];
-                  const isCompleted = state === "done";
-                  const isActive = state === "active";
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+              {funnelStages.map(
+                (stage, index) => {
+                  const metrics = stage.stage;
 
                   return (
-                    <div
-                      key={step.id}
-                      className={`relative flex items-center gap-6 transition-opacity duration-300 ${
-                        isCompleted || isActive ? "opacity-100" : "opacity-60"
-                      }`}
+                    <button
+                      key={stage.label}
+                      type="button"
+                      onClick={() => {
+                        if (stage.href !== "#") {
+                          router.push(stage.href);
+                        }
+                      }}
+                      disabled={stage.href === "#"}
+                      className="relative rounded-xl bg-surface-container-high/50 p-4 text-left transition-all hover:bg-surface-container-high disabled:cursor-default"
                     >
-                      <div
-                        className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-semibold transition-all duration-300 ${
-                          isCompleted
-                            ? "scale-100 bg-success shadow-lg shadow-success/30"
-                            : isActive
-                              ? "scale-110 animate-pulse bg-primary shadow-lg shadow-primary/40"
-                              : "scale-95 bg-outline-variant/20"
-                        }`}
-                      >
-                        {isCompleted && (
-                          <span className="material-symbols-outlined text-[16px] text-white">
-                            check
-                          </span>
-                        )}
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                          {index + 1}
+                        </span>
 
-                        {isActive && (
-                          <div className="h-2.5 w-2.5 rounded-full bg-white" />
-                        )}
-
-                        {!isCompleted && !isActive && (
-                          <span className="text-xs text-on-surface-variant">
-                            {index + 1}
+                        {index < 5 && (
+                          <span className="material-symbols-outlined hidden text-on-surface-variant/50 lg:block">
+                            arrow_forward
                           </span>
                         )}
                       </div>
 
-                      <div className="flex-1">
-                        <p
-                          className={`mb-1 font-title-lg text-title-lg leading-none transition-colors duration-300 ${
-                            isCompleted
-                              ? "text-success"
-                              : isActive
-                                ? "text-primary font-semibold"
-                                : "text-on-surface-variant"
-                          }`}
-                        >
-                          {step.title}
-                        </p>
+                      <p className="font-label-md text-label-md text-on-surface-variant">
+                        {stage.label}
+                      </p>
 
-                        <p
-                          className={`font-label-md transition-colors duration-300 ${
-                            isCompleted || isActive
-                              ? "text-on-surface-variant"
-                              : "text-on-surface-variant/50"
-                          }`}
-                        >
-                          {step.description}
-                        </p>
+                      <p className="mt-2 text-2xl font-bold text-primary">
+                        {dashboardLoading
+                          ? "..."
+                          : metrics?.count ?? 0}
+                      </p>
+
+                      <div className="mt-4 space-y-1 text-xs text-on-surface-variant">
+                        <div className="flex justify-between">
+                          <span>Value</span>
+
+                          <span className="font-semibold text-on-surface">
+                            {formatUsd(
+                              metrics?.value ?? 0,
+                              "USD"
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between">
+                          <span>Avg. Time</span>
+
+                          <span className="font-semibold text-on-surface">
+                            {metrics?.average_time !== null &&
+                            metrics?.average_time !== undefined
+                              ? `${metrics.average_time} days`
+                              : "—"}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between">
+                          <span>Pending</span>
+
+                          <span className="font-semibold text-on-surface">
+                            {metrics?.pending ?? 0}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between">
+                          <span>SLA Breaches</span>
+
+                          <span className="font-semibold text-on-surface">
+                            {metrics?.sla_breaches ?? 0}
+                          </span>
+                        </div>
                       </div>
-                    </div>
+                    </button>
                   );
-                })}
-              </div>
+                }
+              )}
             </div>
-          </section>
+          </div>
+        </section>
 
-          {/* Recent invoices */}
-          {recent.length > 0 && (
-            <section
-              className="
-                order-6
-                mx-auto
-                flex
-                w-full
-                flex-col
-                gap-3
-                lg:col-span-2
-                lg:row-start-3
-              "
-            >
-              <div className="flex items-center justify-between px-1">
-                <h3 className="font-title-lg text-title-lg text-on-surface">
-                  Recent Invoices
-                </h3>
+        {/* ==================================================
+            Workflow Status
+        ================================================== */}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    router.push("/dashboard/invoices");
-                  }}
-                  className="font-label-md text-label-md text-primary hover:underline"
+        <section className="mb-8">
+          <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 shadow-md">
+
+            <div className="mb-6">
+              <h2 className="font-title-lg text-title-lg text-on-surface">
+                Workflow Status
+              </h2>
+
+              <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
+                Current status distribution across procurement modules.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+              {statusSections.map((item) => (
+                <div
+                  key={item.title}
+                  className="rounded-xl bg-surface-container-high/40 p-5"
                 >
-                  View All
-                </button>
+                  <h3 className="font-title-lg text-title-lg text-on-surface">
+                    {item.title}
+                  </h3>
+
+                  <div className="mt-4 space-y-2">
+                    {item.data &&
+                    Object.keys(item.data).length > 0 ? (
+                      Object.entries(item.data).map(
+                        ([status, count]) => (
+                          <div
+                            key={status}
+                            className="flex items-center justify-between rounded-lg bg-surface-container-lowest px-3 py-2"
+                          >
+                            <span className="font-label-md text-label-md text-on-surface-variant">
+                              {status}
+                            </span>
+
+                            <span className="rounded-full bg-primary/10 px-2.5 py-1 font-label-md text-label-md font-semibold text-primary">
+                              {count}
+                            </span>
+                          </div>
+                        )
+                      )
+                    ) : (
+                      <p className="font-label-md text-label-md text-on-surface-variant">
+                        No records available.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ==================================================
+            Spend Summary
+        ================================================== */}
+
+        <section className="mb-8">
+          <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 shadow-md">
+
+            <div className="mb-6">
+              <h2 className="font-title-lg text-title-lg text-on-surface">
+                Spend Summary
+              </h2>
+
+              <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
+                Procurement and payment financial overview.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+
+              <div className="rounded-xl bg-surface-container-high/50 p-5">
+                <p className="text-sm text-on-surface-variant">
+                  PO Value
+                </p>
+
+                <p className="mt-2 text-xl font-bold text-primary">
+                  {formatUsd(
+                    dashboard?.spend.total_po_value ?? 0,
+                    "USD"
+                  )}
+                </p>
               </div>
 
-              <div className="flex flex-col gap-2">
-                {recent.map((invoice) => (
+              <div className="rounded-xl bg-surface-container-high/50 p-5">
+                <p className="text-sm text-on-surface-variant">
+                  Invoice Value
+                </p>
+
+                <p className="mt-2 text-xl font-bold text-primary">
+                  {formatUsd(
+                    dashboard?.spend.total_invoice_value ?? 0,
+                    "USD"
+                  )}
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-surface-container-high/50 p-5">
+                <p className="text-sm text-on-surface-variant">
+                  Paid Amount
+                </p>
+
+                <p className="mt-2 text-xl font-bold text-primary">
+                  {formatUsd(
+                    dashboard?.spend.total_paid_amount ?? 0,
+                    "USD"
+                  )}
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-surface-container-high/50 p-5">
+                <p className="text-sm text-on-surface-variant">
+                  Pending Payment
+                </p>
+
+                <p className="mt-2 text-xl font-bold text-primary">
+                  {formatUsd(
+                    dashboard?.spend.total_pending_payment ?? 0,
+                    "USD"
+                  )}
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-surface-container-high/50 p-5">
+                <p className="text-sm text-on-surface-variant">
+                  Exception Value
+                </p>
+
+                <p className="mt-2 text-xl font-bold text-primary">
+                  {formatUsd(
+                    dashboard?.spend.total_exception_value ?? 0,
+                    "USD"
+                  )}
+                </p>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        {/* ==================================================
+            Recent Invoices
+        ================================================== */}
+
+        {recent.length > 0 && (
+          <section>
+            <div className="mb-3 flex items-center justify-between px-1">
+              <div>
+                <h2 className="font-title-lg text-title-lg text-on-surface">
+                  Recent Invoices
+                </h2>
+
+                <p className="mt-1 font-label-md text-label-md text-on-surface-variant">
+                  Latest invoice activity.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  router.push(
+                    "/dashboard/invoices"
+                  )
+                }
+                className="font-label-md text-label-md text-primary hover:underline"
+              >
+                View All
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {recent.map((invoice) => {
+                const destination =
+                  invoice.processing_status ===
+                    "Approval Pending" ||
+                  invoice.processing_status ===
+                    "Approved" ||
+                  invoice.processing_status ===
+                    "Rejected" ||
+                  invoice.processing_status ===
+                    "PO Completed" ||
+                  invoice.processing_status ===
+                    "PO Generated"
+                    ? `/dashboard/invoices/${invoice.id}/approval`
+                    : `/dashboard/invoices/${invoice.id}/validation`;
+
+                return (
                   <button
                     key={invoice.id}
                     type="button"
-                    onClick={() => {
-                      const destination =
-                        invoice.processing_status === "Approval Pending" ||
-                        invoice.processing_status === "Approved" ||
-                        invoice.processing_status === "Rejected" ||
-                        invoice.processing_status === "PO Completed" ||
-                        invoice.processing_status === "PO Generated"
-                            ? `/dashboard/invoices/${invoice.id}/approval`
-                            : `/dashboard/invoices/${invoice.id}/validation`;
-
-                      router.push(destination);
-                    }}
-                    className="flex w-full items-center justify-between rounded-lg bg-surface-container-lowest p-4 text-left shadow-sm transition-all hover:shadow-md"
+                    onClick={() =>
+                      router.push(destination)
+                    }
+                    className="flex w-full items-center justify-between gap-4 rounded-xl bg-surface-container-lowest p-4 text-left shadow-sm transition-all hover:shadow-md"
                   >
                     <div className="flex min-w-0 flex-col">
                       <span className="truncate font-body-md text-body-md font-semibold text-on-surface">
@@ -819,29 +1173,32 @@ export default function DashboardPage() {
                       </span>
 
                       <span className="font-label-md text-label-md text-on-surface-variant">
-                        {invoice.invoice_number} · {fmtDate(invoice.invoice_date)}
+                        {invoice.invoice_number} ·{" "}
+                        {fmtDate(
+                          invoice.invoice_date
+                        )}
                       </span>
                     </div>
 
                     <div className="ml-4 flex shrink-0 items-center gap-4">
                       <span className="font-body-md text-body-md text-on-surface">
-                        {formatUsd(invoice.total_amount, invoice.currency)}
+                        {formatUsd(
+                          invoice.total_amount,
+                          invoice.currency
+                        )}
                       </span>
 
-                      <span
-                        className={`font-label-md text-label-md ${
-                            STATUS_COLOR[invoice.processing_status]
-                        }`}
-                      >
-                        {STATUS_LABEL[invoice.processing_status]}
+                      <span className="font-label-md text-label-md text-on-surface-variant">
+                        {invoice.processing_status}
                       </span>
                     </div>
                   </button>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
       </main>
     </div>
   );

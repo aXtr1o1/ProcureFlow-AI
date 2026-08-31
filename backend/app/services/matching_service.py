@@ -394,7 +394,7 @@ class MatchingService:
 
             if is_match:
 
-                invoice.processing_status = "Matched"
+                invoice.processing_status = "Approval Pending"
 
                 # ----------------------------------------------
                 # Resolve existing open exception
@@ -403,10 +403,8 @@ class MatchingService:
                 open_exception = (
                     self.db.query(InvoiceException)
                     .filter(
-                        InvoiceException.invoice_id
-                        == invoice.id,
-                        InvoiceException.status
-                        == "Open",
+                        InvoiceException.invoice_id == invoice.id,
+                        InvoiceException.status == "Open",
                     )
                     .all()
                 )
@@ -420,13 +418,8 @@ class MatchingService:
                         "a successful re-match."
                     )
 
-                    exception.resolved_by_id = (
-                        performed_by_id
-                    )
-
-                    exception.resolved_at = (
-                        datetime.utcnow()
-                    )
+                    exception.resolved_by_id = performed_by_id
+                    exception.resolved_at = datetime.utcnow()
 
                 # ----------------------------------------------
                 # Status Log
@@ -435,11 +428,10 @@ class MatchingService:
                 self.db.add(
                     InvoiceStatusLog(
                         invoice_id=invoice.id,
-                        status="Matched",
+                        status="Approval Pending",
                         remarks=(
-                            "Invoice successfully matched "
-                            f"with Purchase Order "
-                            f"{purchase_order.po_number}."
+                            "Invoice successfully matched with "
+                            "Purchase Order. Awaiting invoice approval."
                         ),
                         updated_by="System",
                     )
@@ -536,7 +528,19 @@ class MatchingService:
             "is_match": is_match,
             "match_score": score,
             "mismatches": [
-                mismatch[0]
+                {
+                    "field_name": mismatch[0],
+                    "po_value": (
+                        str(mismatch[1])
+                        if mismatch[1] is not None
+                        else None
+                    ),
+                    "invoice_value": (
+                        str(mismatch[2])
+                        if mismatch[2] is not None
+                        else None
+                    ),
+                }
                 for mismatch in mismatches
             ],
             "status": invoice.processing_status,
@@ -549,3 +553,122 @@ class MatchingService:
                 else "Invoice matched with mismatches."
             ),
         }
+
+    # ==========================================================
+    # Approve Match Override
+    # ==========================================================
+
+    def approve_match_override(
+        self,
+        invoice_id: int,
+        performed_by_id: int | None = None,
+        remarks: str | None = None,
+    ):
+        """
+        Approve the matching exception and send the invoice
+        to the normal invoice approval workflow.
+        """
+
+        invoice = (
+            self.db.query(Invoice)
+            .filter(Invoice.id == invoice_id)
+            .first()
+        )
+
+        if invoice is None:
+            raise ValueError("Invoice not found.")
+
+        if invoice.processing_status != "Review Required":
+            raise ValueError(
+                "Only invoices requiring manual review can be "
+                "approved after matching."
+            )
+
+        invoice.processing_status = "Approval Pending"
+
+        self.db.add(
+            InvoiceStatusLog(
+                invoice_id=invoice.id,
+                status="Approval Pending",
+                remarks=(
+                    remarks
+                    or "Invoice mismatch manually approved. "
+                    "Invoice is now awaiting invoice approval."
+                ),
+                updated_by="System",
+            )
+        )
+
+        self.db.commit()
+        self.db.refresh(invoice)
+
+        return invoice
+
+    # ==========================================================
+    # Reject Invoice During Match Review
+    # ==========================================================
+
+    def reject_invoice_match(
+        self,
+        invoice_id: int,
+        performed_by_id: int | None = None,
+        remarks: str | None = None,
+    ):
+        """
+        Reject an invoice during manual match review.
+
+        A rejected invoice must not proceed to approval
+        or payment.
+        """
+
+        invoice = (
+            self.db.query(Invoice)
+            .filter(Invoice.id == invoice_id)
+            .first()
+        )
+
+        if invoice is None:
+            raise ValueError("Invoice not found.")
+
+        if invoice.processing_status != "Review Required":
+            raise ValueError(
+                "Only invoices requiring manual review can be rejected."
+            )
+
+        invoice.processing_status = "Rejected"
+
+        # Resolve the open matching exception
+        open_exception = (
+            self.db.query(InvoiceException)
+            .filter(
+                InvoiceException.invoice_id == invoice.id,
+                InvoiceException.status == "Open",
+            )
+            .first()
+        )
+
+        if open_exception is not None:
+            open_exception.status = "Resolved"
+            open_exception.resolution_remarks = (
+                remarks or "Invoice rejected during manual match review."
+            )
+            open_exception.resolved_by_id = performed_by_id
+            open_exception.resolved_at = datetime.utcnow()
+
+        self.db.add(
+            InvoiceStatusLog(
+                invoice_id=invoice.id,
+                status="Rejected",
+                remarks=(
+                    remarks
+                    or "Invoice rejected during manual match review. "
+                    "Invoice will not proceed to payment."
+                ),
+                updated_by="System",
+            )
+        )
+
+        self.db.commit()
+        self.db.refresh(invoice)
+
+        return invoice

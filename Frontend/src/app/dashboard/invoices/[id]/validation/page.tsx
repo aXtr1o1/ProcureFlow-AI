@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
     getInvoice,
-    updateInvoiceStatus,
 } from "@/services/api";
 import { fmtDate } from "@/lib/invoices";
 import { formatUsd } from "@/lib/currency";
@@ -40,7 +39,6 @@ export default function InvoiceValidationPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [invoice, setInvoice] = useState<Invoice | null | undefined>(undefined);
-  const [sending, setSending] = useState(false);
   const [flagged, setFlagged] = useState(false);
   const [showFlagMessage, setShowFlagMessage] = useState(false);
 
@@ -80,28 +78,9 @@ export default function InvoiceValidationPage() {
     );
   }
 
-  const handleGoToApproval = async () => {
-
-    setSending(true);
-
-    try {
-
-        await updateInvoiceStatus(invoice.id);
-
-        router.push(
-            `/dashboard/invoices/${invoice.id}/approval`
-        );
-
-    } catch (error) {
-
-        console.error(error);
-
-    } finally {
-
-        setSending(false);
-
-    }
-};
+  const handleGoToMatching = () => {
+    router.push(`/dashboard/invoices/${invoice.id}/matching`);
+  };
 
   return (
 
@@ -129,7 +108,7 @@ export default function InvoiceValidationPage() {
             <div className="flex items-center gap-xs mt-xs">
               <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
               <span className="font-title-md text-title-md text-primary">
-                Pending Validation
+                {invoice.processing_status}
               </span>
             </div>
           </div>
@@ -218,19 +197,27 @@ export default function InvoiceValidationPage() {
               <span className="material-symbols-outlined text-[14px]">
                 check_circle
               </span>
-              <span className="font-label-md text-label-md">Vendor Verified</span>
+              <span className="font-label-md text-label-md">
+                Vendor Verified
+              </span>
             </div>
+
             <div className="flex items-center gap-xs px-sm py-1.5 bg-green-50 rounded-full text-green-700">
               <span className="material-symbols-outlined text-[14px]">
                 check_circle
               </span>
-              <span className="font-label-md text-label-md">PO Match</span>
-            </div>
-            <div className="flex items-center gap-xs px-sm py-1.5 bg-green-50 rounded-full text-green-700">
-              <span className="material-symbols-outlined text-[14px]">
-                check_circle
+              <span className="font-label-md text-label-md">
+                Duplicate Check
               </span>
-              <span className="font-label-md text-label-md">Duplicate Check</span>
+            </div>
+
+            <div className="flex items-center gap-xs px-sm py-1.5 bg-yellow-50 rounded-full text-yellow-700">
+              <span className="material-symbols-outlined text-[14px]">
+                pending
+              </span>
+              <span className="font-label-md text-label-md">
+                PO Match Pending
+              </span>
             </div>
           </div>
         </div>
@@ -305,22 +292,13 @@ export default function InvoiceValidationPage() {
       {/* Approval */}
       <button
         type="button"
-        onClick={handleGoToApproval}
-        disabled={sending}
+        onClick={handleGoToMatching}
         className="flex-[2] h-12 rounded-xl bg-primary text-on-primary font-title-md flex items-center justify-center gap-sm"
       >
-        {sending ? (
-          <span className="material-symbols-outlined animate-spin">
-            sync
-          </span>
-        ) : (
-          <>
-            Go to Approval
-            <span className="material-symbols-outlined">
-              chevron_right
-            </span>
-          </>
-        )}
+        Go to PO Matching
+        <span className="material-symbols-outlined">
+          chevron_right
+        </span>
       </button>
 
     </div>

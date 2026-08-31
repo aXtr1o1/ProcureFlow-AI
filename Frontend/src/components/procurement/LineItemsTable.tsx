@@ -9,12 +9,12 @@ interface LineItem {
 }
 
 interface LineItemsTableProps {
-  items: LineItem[];
+  items?: LineItem[];
   currency?: string;
 }
 
 export default function LineItemsTable({
-  items,
+  items = [],
   currency = "USD",
 }: LineItemsTableProps) {
   const formatAmount = (value: number) =>
@@ -31,12 +31,15 @@ export default function LineItemsTable({
             <th className="px-4 py-3 text-left">
               Description
             </th>
+
             <th className="px-4 py-3 text-right">
               Quantity
             </th>
+
             <th className="px-4 py-3 text-right">
               Unit Price
             </th>
+
             <th className="px-4 py-3 text-right">
               Amount
             </th>
@@ -44,7 +47,7 @@ export default function LineItemsTable({
         </thead>
 
         <tbody>
-          {items.length === 0 ? (
+          {(items ?? []).length === 0 ? (
             <tr>
               <td
                 colSpan={4}
@@ -54,7 +57,7 @@ export default function LineItemsTable({
               </td>
             </tr>
           ) : (
-            items.map((item, index) => (
+            (items ?? []).map((item, index) => (
               <tr
                 key={item.id ?? index}
                 className="border-t"

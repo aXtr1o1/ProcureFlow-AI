@@ -1,6 +1,11 @@
 from typing import List, Optional
-
 from pydantic import BaseModel
+
+
+class MatchingMismatch(BaseModel):
+    field_name: str
+    po_value: Optional[str] = None
+    invoice_value: Optional[str] = None
 
 
 class MatchingResponse(BaseModel):
@@ -15,7 +20,7 @@ class MatchingResponse(BaseModel):
 
     match_score: float
 
-    mismatches: List[str]
+    mismatches: List[MatchingMismatch]
 
     status: str
 

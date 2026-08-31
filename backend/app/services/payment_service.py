@@ -103,6 +103,15 @@ class PaymentService:
         invoice = self._get_invoice(request.invoice_id)
 
         # ----------------------------------------------
+        # Payment is allowed only after invoice approval
+        # ----------------------------------------------
+
+        if invoice.processing_status != "Payment Pending":
+            raise ValueError(
+                "Payment can only be created for invoices with Payment Pending status."
+            )
+
+        # ----------------------------------------------
         # Validate payment amount
         # ----------------------------------------------
 
@@ -171,7 +180,7 @@ class PaymentService:
             payment_reference=payment_reference,
             payment_method=request.payment_method,
             amount=request.amount,
-            currency=request.currency,
+            currency=invoice.currency or "USD",
             status="Pending",
             payment_date=request.payment_date,
             due_date=request.due_date,
@@ -324,6 +333,9 @@ class PaymentService:
                     "Total paid amount cannot exceed "
                     "the invoice total."
                 )
+
+            if total_paid + payment.amount == invoice_total:
+                invoice.processing_status = "Paid"
 
             payment.payment_date = (
                 payment_date
