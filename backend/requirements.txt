@@ -21,3 +21,4 @@ azure-search-documents==11.5.2
 google-genai==1.31.0
 
 email-validator==2.2.0
+pytest==9.1.1

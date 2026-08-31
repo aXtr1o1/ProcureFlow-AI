@@ -1,17 +1,21 @@
-name: CI/CD Deploy to AWS EC2 on Testing Branch
+name: Deploy to AWS EC2
 
 on:
-  push:
-    branches:
-      - testing-branch
-
-  pull_request:
-    branches:
-      - testing-branch
+  workflow_run:
+    workflows:
+      - "Run Tests"
+    types:
+      - completed
 
 jobs:
   deploy:
-    if: github.event_name == 'push'
+    name: Deploy to EC2
+
+    if: >
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'testing-branch' }}
+
     runs-on: ubuntu-latest
 
     steps:
@@ -21,7 +25,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Verify Secrets
         run: |
@@ -49,21 +53,21 @@ jobs:
             git pull origin testing-branch
 
             echo "Activating virtual environment..."
-            source backend/venv/bin/activate
+            source .venv/bin/activate
 
             echo "Upgrading pip..."
-            python -m pip install --upgrade pip
+            pip install --upgrade pip
 
             echo "Installing dependencies..."
-            pip install -r backend/requirements.txt
+            python -m pip install -r backend/requirements.txt
             cd backend
             rm invoice_po.db 
             python3 -m app.database.init_db
             echo "Restarting service..."
             sudo systemctl daemon-reload
-            sudo systemctl restart procureflow-backend
+            sudo systemctl restart backend
 
             echo "Checking service status..."
-            sudo systemctl status procureflow-backend --no-pager
+            sudo systemctl status backend 
 
             echo "Deployment completed successfully."
