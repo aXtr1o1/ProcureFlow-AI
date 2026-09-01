@@ -361,7 +361,7 @@ export default function AssistantPage() {
             Assistant
           </h1>
           <p className="font-body-md text-body-md text-on-surface-variant">
-            ChatGPT-style answers from your invoice documents · amounts in USD ($)
+            Gemini-style answers from your invoice documents · amounts in USD ($)
           </p>
         </div>
         <button

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { fmtDate, listInvoices, type Invoice } from "@/lib/invoices";
 import { useAuth } from "@/context/AuthContext";
 import { generateSummary } from "@/services/api";
-import { formatUsd, toUsd } from "@/lib/currency";
+import { formatUsd } from "@/lib/currency";
 
 function startOfMonth() {
   const d = new Date();
@@ -68,24 +68,44 @@ export default function SummaryPage() {
 
   const stats = useMemo(() => {
     const total = inRange.length;
+
     const totalAmount = inRange.reduce(
-      (s, i) => s + (toUsd(i.total_amount, i.currency) ?? 0),
+      (s, i) => s + (Number(i.total_amount) || 0),
       0,
     );
-    const approved = inRange.filter((i) => i.processing_status === "Approved").length;
+
+    const approved = inRange.filter(
+      (i) => i.processing_status === "Approved"
+    ).length;
+
     const pending = total - approved;
-    const pctComplete = total === 0 ? 0 : Math.round((approved / total) * 100);
+
+    const pctComplete =
+      total === 0 ? 0 : Math.round((approved / total) * 100);
 
     const vendorTotals = new Map<string, number>();
+
     inRange.forEach((inv) => {
-      const amt = toUsd(inv.total_amount, inv.currency) ?? 0;
-      vendorTotals.set(inv.vendor_name, (vendorTotals.get(inv.vendor_name) ?? 0) + amt);
+      const amt = Number(inv.total_amount) || 0;
+
+      vendorTotals.set(
+        inv.vendor_name,
+        (vendorTotals.get(inv.vendor_name) ?? 0) + amt
+      );
     });
+
     const topVendors = Array.from(vendorTotals.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3);
 
-    return { total, totalAmount, approved, pending, pctComplete, topVendors };
+    return {
+      total,
+      totalAmount,
+      approved,
+      pending,
+      pctComplete,
+      topVendors,
+    };
   }, [inRange]);
 
   const insightText = `During this period, ${stats.total} invoice${

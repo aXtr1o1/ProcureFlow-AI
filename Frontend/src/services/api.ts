@@ -1,5 +1,17 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem("access_token");
+
+  if (!token) {
+    throw new Error("Authentication required. Please login again.");
+  }
+
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 export async function login(username: string, password: string) {
 
   console.log("API URL:", API_URL);
@@ -115,37 +127,46 @@ export async function analyzeInvoice(file: File) {
 }
 
 export async function getInvoices() {
-  const token = localStorage.getItem("access_token");
-
-  // Trailing slash avoids FastAPI's 307 redirect from /invoices -> /invoices/
   const response = await fetch(`${API_URL}/invoices/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers: getAuthHeaders(),
     cache: "no-store",
   });
 
   const data = await response.json();
 
-  console.log("Status:", response.status);
-  console.log("Response:", data);
+  console.log("getInvoices Status:", response.status);
+  console.log("getInvoices Response:", data);
+
+  if (response.status === 401) {
+    localStorage.removeItem("access_token");
+    throw new Error("Session expired. Please login again.");
+  }
 
   if (!response.ok) {
     const detail = data.detail;
+
     const message = Array.isArray(detail)
-      ? detail.map((item: { msg?: string }) => item.msg || String(item)).join(", ")
+      ? detail
+          .map((item: { msg?: string }) => item.msg || String(item))
+          .join(", ")
       : detail || "Failed to fetch invoices";
+
     throw new Error(message);
   }
 
-  // Normalize so callers always get an array
   if (Array.isArray(data)) {
-    return { success: true, count: data.length, data };
+    return {
+      success: true,
+      count: data.length,
+      data,
+    };
   }
 
   return {
     success: Boolean(data?.success ?? true),
-    count: data?.count ?? (Array.isArray(data?.data) ? data.data.length : 0),
+    count:
+      data?.count ??
+      (Array.isArray(data?.data) ? data.data.length : 0),
     data: Array.isArray(data?.data) ? data.data : [],
   };
 }
@@ -378,23 +399,469 @@ export async function updateInvoiceStatus(
 }
 
 export async function generateSummary(invoiceId: number) {
-    const token = localStorage.getItem("access_token");
+  const token = localStorage.getItem("access_token");
 
-    const response = await fetch(
-        `${API_URL}/summary/generate/${invoiceId}`,
-        {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data.detail);
+  const response = await fetch(
+    `${API_URL}/summary/generate/${invoiceId}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     }
+  );
 
-    return data;
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.detail);
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Invoice 2-Way Matching
+// ==========================================================
+
+export interface MatchingMismatch {
+  field_name: string;
+  po_value: string | null;
+  invoice_value: string | null;
+}
+
+export interface MatchingResult {
+  success: boolean;
+  invoice_id: number;
+  po_number: string;
+  is_match: boolean;
+  match_score: number;
+  mismatches: MatchingMismatch[];
+  status: string;
+  message: string;
+  match_run_id: number;
+  exception_id?: number | null;
+}
+
+export async function matchInvoice(
+  invoiceId: number | string
+): Promise<MatchingResult> {
+  const token = localStorage.getItem("access_token");
+
+  if (!token) {
+    throw new Error(
+      "Authentication token is missing. Please login again."
+    );
+  }
+
+  const response = await fetch(
+    `${API_URL}/matching/${invoiceId}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    }
+  );
+
+  const data = await response.json();
+
+  console.log("Matching Response:", response.status);
+  console.log("Matching Data:", data);
+
+  if (!response.ok) {
+    const detail = data?.detail;
+
+    const message = Array.isArray(detail)
+      ? detail
+          .map(
+            (item: { msg?: string }) =>
+              item.msg || String(item)
+          )
+          .join(", ")
+      : detail || "Invoice matching failed.";
+
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Link Invoice to Purchase Order
+// ==========================================================
+
+export async function linkInvoiceToPurchaseOrder(
+  invoiceId: number | string,
+  purchaseOrderId: number | string
+) {
+  if (!invoiceId) {
+    throw new Error("Invoice ID is missing.");
+  }
+
+  if (!purchaseOrderId) {
+    throw new Error("Purchase Order ID is required.");
+  }
+
+  const response = await fetch(
+    `${API_URL}/invoices/${invoiceId}/purchase-order`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        purchase_order_id: Number(purchaseOrderId),
+      }),
+      cache: "no-store",
+    }
+  );
+
+  const data = await response.json();
+
+  console.log("Link PO Response:", response.status);
+  console.log("Link PO Data:", data);
+
+  if (response.status === 401) {
+    localStorage.removeItem("access_token");
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (!response.ok) {
+    const detail = data?.detail;
+
+    const message = Array.isArray(detail)
+      ? detail
+          .map((item: { msg?: string }) => item.msg || String(item))
+          .join(", ")
+      : detail || "Failed to link Purchase Order.";
+
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Approve Matching Exception
+// ==========================================================
+
+export async function approveMatchOverride(
+  invoiceId: number | string,
+  remarks?: string
+) {
+  const token = localStorage.getItem("access_token");
+
+  const response = await fetch(
+    `${API_URL}/matching/${invoiceId}/approve`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        remarks: remarks ?? null,
+      }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const detail = data?.detail;
+
+    const message = Array.isArray(detail)
+      ? detail
+          .map((item: { msg?: string }) => item.msg || String(item))
+          .join(", ")
+      : detail || "Failed to approve matching exception.";
+
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+
+// ==========================================================
+// Reject Invoice During Matching Review
+// ==========================================================
+
+export async function rejectInvoiceMatch(
+  invoiceId: number | string,
+  remarks?: string
+) {
+  const token = localStorage.getItem("access_token");
+
+  const response = await fetch(
+    `${API_URL}/matching/${invoiceId}/reject`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        remarks: remarks ?? null,
+      }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const detail = data?.detail;
+
+    const message = Array.isArray(detail)
+      ? detail
+          .map((item: { msg?: string }) => item.msg || String(item))
+          .join(", ")
+      : detail || "Failed to reject invoice.";
+
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Payment APIs
+// ==========================================================
+
+export interface Payment {
+  id: number;
+  invoice_id: number;
+  payment_reference: string;
+  payment_method: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  payment_date: string | null;
+  due_date: string | null;
+  remarks: string | null;
+  created_by_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaymentSummary {
+  invoice_id: number;
+  invoice_total: number;
+  total_paid: number;
+  total_pending: number;
+  total_failed: number;
+  total_cancelled: number;
+  remaining_amount: number;
+  payment_status: string;
+  currency: string;
+}
+
+// ==========================================================
+// Create Payment
+// ==========================================================
+
+export async function createPayment(payment: {
+  invoice_id: number;
+  payment_reference: string;
+  payment_method?: string;
+  amount: number;
+  currency?: string;
+  payment_date?: string;
+  due_date?: string;
+  remarks?: string;
+}): Promise<Payment> {
+  const response = await fetch(`${API_URL}/payments/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(payment),
+  });
+
+  const data = await response.json();
+
+  if (response.status === 401) {
+    localStorage.removeItem("access_token");
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to create payment."
+    );
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Get Payments for Invoice
+// ==========================================================
+
+export async function getInvoicePayments(
+  invoiceId: number | string
+): Promise<Payment[]> {
+  const response = await fetch(
+    `${API_URL}/payments/invoice/${invoiceId}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    }
+  );
+
+  const data = await response.json();
+
+  if (response.status === 401) {
+    localStorage.removeItem("access_token");
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to fetch invoice payments."
+    );
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Get Payment Summary
+// ==========================================================
+
+export async function getInvoicePaymentSummary(
+  invoiceId: number | string
+): Promise<PaymentSummary> {
+  const response = await fetch(
+    `${API_URL}/payments/invoice/${invoiceId}/summary`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    }
+  );
+
+  const data = await response.json();
+
+  if (response.status === 401) {
+    localStorage.removeItem("access_token");
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to fetch payment summary."
+    );
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Mark Payment as Paid
+// ==========================================================
+
+export async function markPaymentPaid(
+  paymentId: number | string,
+  remarks?: string,
+  paymentDate?: string
+): Promise<Payment> {
+  const response = await fetch(
+    `${API_URL}/payments/${paymentId}/paid`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        status: "Paid",
+        remarks: remarks ?? null,
+        payment_date: paymentDate ?? null,
+      }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to mark payment as paid."
+    );
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Mark Payment as Failed
+// ==========================================================
+
+export async function markPaymentFailed(
+  paymentId: number | string,
+  remarks?: string
+): Promise<Payment> {
+  const response = await fetch(
+    `${API_URL}/payments/${paymentId}/failed`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        status: "Failed",
+        remarks: remarks ?? null,
+      }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to mark payment as failed."
+    );
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Cancel Payment
+// ==========================================================
+
+export async function cancelPayment(
+  paymentId: number | string,
+  remarks?: string
+): Promise<Payment> {
+  const response = await fetch(
+    `${API_URL}/payments/${paymentId}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        status: "Cancelled",
+        remarks: remarks ?? null,
+      }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to cancel payment."
+    );
+  }
+
+  return data;
 }

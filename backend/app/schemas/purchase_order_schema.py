@@ -1,7 +1,8 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class PurchaseOrderStatus(str, Enum):
     CREATED = "Created"
@@ -11,12 +12,15 @@ class PurchaseOrderStatus(str, Enum):
     SENT = "Sent"
     VENDOR_ACCEPTED = "Vendor Accepted"
     VENDOR_REJECTED = "Vendor Rejected"
+    ACKNOWLEDGED = "Acknowledged"
     CLOSED = "Closed"
     CANCELLED = "Cancelled"
+
 
 # ==========================================================
 # Update Purchase Order Status
 # ==========================================================
+
 class PurchaseOrderStatusUpdate(BaseModel):
     status: PurchaseOrderStatus
 
@@ -30,8 +34,23 @@ class PurchaseOrderVendorResponseRequest(BaseModel):
 
 
 # ==========================================================
+# Purchase Order Line Response
+# ==========================================================
+
+class PurchaseOrderLineResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    description: str
+    quantity: float
+    unit_price: float
+    amount: float
+
+
+# ==========================================================
 # Purchase Order Response
 # ==========================================================
+
 class PurchaseOrderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,3 +64,7 @@ class PurchaseOrderResponse(BaseModel):
     total_amount: float
     status: PurchaseOrderStatus
     created_at: datetime
+
+    line_items: list[PurchaseOrderLineResponse] = Field(
+        default_factory=list
+    )

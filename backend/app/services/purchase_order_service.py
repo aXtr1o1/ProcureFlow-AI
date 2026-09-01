@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional, List
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database.models import (
     PurchaseRequisition,
@@ -59,12 +59,16 @@ class PurchaseOrderService:
 
         return (
             self.db.query(ProcurementPurchaseOrder)
+            .options(
+                joinedload(
+                    ProcurementPurchaseOrder.line_items
+                )
+            )
             .filter(
                 ProcurementPurchaseOrder.po_number == po_number
             )
             .first()
-        )
-
+    )
     # ==========================================================
     # Get All Purchase Orders
     # ==========================================================
@@ -129,11 +133,11 @@ class PurchaseOrderService:
 
         allowed_transitions = {
             "Created": {
-                "Approval Pending",
+                "Pending Approval",
                 "Cancelled",
             },
 
-            "Approval Pending": {
+            "Pending Approval": {
                 "Approved",
                 "Rejected",
             },
@@ -208,7 +212,7 @@ class PurchaseOrderService:
 
         return self._transition(
             po_id=po_id,
-            target_status="Approval Pending",
+            target_status="Pending Approval",
             user_id=user_id,
             action="SUBMIT",
             message="Purchase Order submitted for approval.",
@@ -238,7 +242,7 @@ class PurchaseOrderService:
             po_id
         )
 
-        if purchase_order.status != "Approval Pending":
+        if purchase_order.status != "Pending Approval":
             raise ValueError(
                 "Only Purchase Orders pending approval "
                 "can be approved or rejected."
@@ -327,7 +331,6 @@ class PurchaseOrderService:
             purchase_order_id=purchase_order.id,
             response=response,
             remarks=remarks,
-            recorded_by_id=user_id,
         )
 
         self.db.add(vendor_response)
@@ -492,19 +495,15 @@ class PurchaseOrderService:
 
         for item in purchase_requisition.line_items:
 
-            purchase_order_line = (
-                ProcurementPurchaseOrderLine(
-                    purchase_order_id=purchase_order.id,
-                    description=item.description,
-                    quantity=item.quantity,
-                    unit_price=item.unit_price,
-                    amount=item.amount,
-                )
+            purchase_order_line = ProcurementPurchaseOrderLine(
+                purchase_order_id=purchase_order.id,
+                description=item.description,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                amount=item.amount,
             )
 
-            self.db.add(
-                purchase_order_line
-            )
+            self.db.add(purchase_order_line)
 
         self.db.commit()
         self.db.refresh(purchase_order)

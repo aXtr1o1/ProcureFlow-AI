@@ -31,6 +31,8 @@ const STATUS_LABEL: Record<string, string> = {
   Failed: "Failed",
   "PO Generated": "PO Generated",
   "PO Completed": "PO Completed",
+  "Payment Pending": "Payment Pending",
+  Paid: "Paid",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -46,6 +48,8 @@ const STATUS_STYLE: Record<string, string> = {
   Failed: "bg-error-container text-on-error-container",
   "PO Generated": "bg-blue-50 text-blue-700",
   "PO Completed": "bg-indigo-50 text-indigo-700",
+  "Payment Pending": "bg-yellow-50 text-yellow-700",
+  Paid: "bg-green-50 text-green-700",
 };
 
 export default function InvoicesListPage() {
@@ -94,7 +98,7 @@ export default function InvoicesListPage() {
         </h1>
         <button
           type="button"
-          onClick={() => router.push("/dashboard")}
+          onClick={() => router.push("/dashboard/invoices/upload")}
           className="px-6 py-2.5 bg-primary text-on-primary font-title-lg text-title-lg rounded-lg shadow-md hover:shadow-lg transition-all"
         >
           Upload New
@@ -119,7 +123,7 @@ export default function InvoicesListPage() {
           </p>
           <button
             type="button"
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.push("/dashboard/invoices/upload")}
             className="text-primary font-label-md hover:underline"
           >
             Go to Upload
@@ -176,25 +180,41 @@ export default function InvoicesListPage() {
                 <button
                   type="button"
                   title={
-                    inv.processing_status === "Approval Pending" ||
-                    inv.processing_status === "Approved" ||
-                    inv.processing_status === "Rejected" ||
-                    inv.processing_status === "PO Completed" ||
-                    inv.processing_status === "PO Generated"
-                      ? "Go to approval"
-                      : "Go to validation"
-                  }
-                  onClick={() =>
-                    router.push(
-                      inv.processing_status === "Approval Pending" ||
+                    inv.processing_status === "Payment Pending"
+                      ? "Go to payment"
+                      : inv.processing_status === "Approval Pending" ||
                         inv.processing_status === "Approved" ||
                         inv.processing_status === "Rejected" ||
                         inv.processing_status === "PO Completed" ||
                         inv.processing_status === "PO Generated"
-                        ? `/dashboard/invoices/${inv.id}/approval`
-                        : `/dashboard/invoices/${inv.id}/validation`,
-                    )
+                      ? "Go to approval"
+                      : "Go to validation"
                   }
+                  onClick={() => {
+                    if (inv.processing_status === "Payment Pending") {
+                      router.push(
+                        `/dashboard/invoices/${inv.id}/payment`,
+                      );
+                      return;
+                    }
+
+                    if (
+                      inv.processing_status === "Approval Pending" ||
+                      inv.processing_status === "Approved" ||
+                      inv.processing_status === "Rejected" ||
+                      inv.processing_status === "PO Completed" ||
+                      inv.processing_status === "PO Generated"
+                    ) {
+                      router.push(
+                        `/dashboard/invoices/${inv.id}/approval`,
+                      );
+                      return;
+                    }
+
+                    router.push(
+                      `/dashboard/invoices/${inv.id}/validation`,
+                    );
+                  }}
                   className="w-9 h-9 rounded-full flex items-center justify-center bg-surface-container text-on-surface-variant hover:bg-primary/10 hover:text-primary transition-colors"
                 >
                   <span className="material-symbols-outlined text-[20px]">

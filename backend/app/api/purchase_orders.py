@@ -181,7 +181,7 @@ def vendor_accept_purchase_order(
     try:
         return service.record_vendor_response(
             po_id=po_id,
-            status="Vendor Accepted",
+            response="Vendor Accepted",
             remarks=request.remarks,
             user_id=current_user.id,
         )
@@ -215,7 +215,7 @@ def vendor_reject_purchase_order(
     try:
         return service.record_vendor_response(
             po_id=po_id,
-            status="Vendor Rejected",
+            response="Vendor Rejected",
             remarks=request.remarks,
             user_id=current_user.id,
         )

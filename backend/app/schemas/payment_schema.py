@@ -18,9 +18,8 @@ class PaymentCreate(BaseModel):
         gt=0,
     )
 
-    payment_reference: str = Field(
-        ...,
-        min_length=1,
+    payment_reference: Optional[str] = Field(
+        default=None,
         max_length=100,
     )
 
@@ -88,7 +87,7 @@ class PaymentResponse(BaseModel):
 
     invoice_id: int
 
-    payment_reference: str
+    payment_reference: Optional[str] = None
 
     payment_method: Optional[str] = None
 

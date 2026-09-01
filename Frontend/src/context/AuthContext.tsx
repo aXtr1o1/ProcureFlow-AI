@@ -1,9 +1,11 @@
 "use client";
+
 import {
   login,
   register,
   getCurrentUser,
 } from "@/services/api";
+
 import { clearAssistantChatStorage } from "@/lib/assistantChatStorage";
 
 import {
@@ -23,72 +25,103 @@ type User = {
 type AuthContextType = {
   user: User | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+
+  signIn: (
+    username: string,
+    password: string
+  ) => Promise<{
+    ok: boolean;
+    error?: string;
+  }>;
+
   signUp: (
     username: string,
     email: string,
     password: string
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<{
+    ok: boolean;
+    error?: string;
+  }>;
+
   signOut: () => void;
 };
 
 const STORAGE_KEY = "aiInvoicePo.session";
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(
+  undefined
+);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-
     const loadUser = async () => {
+      try {
+        const token =
+          localStorage.getItem("access_token");
 
-        try {
+        const cachedUser =
+          localStorage.getItem(STORAGE_KEY);
 
-            const token = localStorage.getItem("access_token");
-            const cachedUser = localStorage.getItem(STORAGE_KEY);
-
-            if (cachedUser) {
-                setUser(JSON.parse(cachedUser));
-            }
-
-            if (!token) {
-                setLoading(false);
-                return;
-            }
-
-            const user = await getCurrentUser();
-
-            setUser(user);
-
-        } catch (error) {
-
-            console.error("SESSION ERROR:", error);
-
-            localStorage.removeItem("access_token");
-            localStorage.removeItem(STORAGE_KEY);
-
-            setUser(null);
-
-        } finally {
-
-            setLoading(false);
-
+        if (cachedUser) {
+          setUser(JSON.parse(cachedUser));
         }
 
+        if (!token) {
+          setLoading(false);
+          return;
+        }
+
+        const currentUser =
+          await getCurrentUser();
+
+        setUser(currentUser);
+
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify(currentUser)
+        );
+      } catch (error) {
+        console.error(
+          "SESSION ERROR:",
+          error
+        );
+
+        localStorage.removeItem(
+          "access_token"
+        );
+
+        localStorage.removeItem(
+          STORAGE_KEY
+        );
+
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadUser();
-
-}, []);
+  }, []);
 
   const persist = (u: User | null) => {
     setUser(u);
+
     if (u) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(u)
+      );
     } else {
-      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(
+        STORAGE_KEY
+      );
     }
   };
 
@@ -96,37 +129,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     username: string,
     password: string
   ) => {
-
     try {
+      const data = await login(
+        username,
+        password
+      );
 
-      const data = await login(username, password);
+      if (!data?.access_token) {
+        throw new Error(
+          "Login succeeded but no access token was returned."
+        );
+      }
 
       localStorage.setItem(
         "access_token",
         data.access_token
       );
 
-      console.log("Token saved:", localStorage.getItem("access_token"));
-
-      const currentUser = await getCurrentUser();
-
-      console.log("Current User:", currentUser);
+      const currentUser =
+        await getCurrentUser();
 
       persist(currentUser);
 
       return {
-          ok: true,
+        ok: true,
       };
-
-    } catch (err: any) {
-
+    } catch (err: unknown) {
       return {
         ok: false,
-        error: err.message,
+        error:
+          err instanceof Error
+            ? err.message
+            : "Login failed.",
       };
-
     }
-
   };
 
   const signUp = async (
@@ -134,9 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string,
     password: string
   ) => {
-
     try {
-
       await register(
         username,
         email,
@@ -144,38 +178,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       );
 
       return await signIn(
-        email,
+        username,
         password
       );
-
-    } catch (err: any) {
-
+    } catch (err: unknown) {
       return {
         ok: false,
-        error: err.message,
+        error:
+          err instanceof Error
+            ? err.message
+            : "Registration failed.",
       };
-
     }
-
   };
 
   const signOut = () => {
-    clearAssistantChatStorage(user?.email);
-    localStorage.removeItem("access_token");
-    localStorage.removeItem(STORAGE_KEY);
+    clearAssistantChatStorage(
+      user?.email
+    );
+
+    localStorage.removeItem(
+      "access_token"
+    );
+
+    localStorage.removeItem(
+      STORAGE_KEY
+    );
+
     persist(null);
   };
 
   const value = useMemo(
-    () => ({ user, loading, signIn, signUp, signOut }),
+    () => ({
+      user,
+      loading,
+      signIn,
+      signUp,
+      signOut,
+    }),
     [user, loading]
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
+  const ctx = useContext(
+    AuthContext
+  );
+
+  if (!ctx) {
+    throw new Error(
+      "useAuth must be used within an AuthProvider"
+    );
+  }
+
   return ctx;
 }

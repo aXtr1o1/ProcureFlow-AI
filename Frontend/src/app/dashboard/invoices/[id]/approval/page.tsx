@@ -104,6 +104,12 @@ export default function InvoiceApprovalPage() {
   const isDecided = ["Approved", "Rejected", "PO Completed"].includes(
     invoice.processing_status,
   );
+  const canApprove = [
+    "Pending Approval",
+    "Approval Requested",
+    "Matched",
+    "Match Passed",
+  ].includes(invoice.processing_status);
 
   const updateHeader = <K extends keyof Invoice>(key: K, value: Invoice[K]) => {
     setInvoice((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -152,7 +158,7 @@ export default function InvoiceApprovalPage() {
     invoice_date: invoice.invoice_date ?? "",
     due_date: invoice.due_date ?? "",
     purchase_order_number: invoice.purchase_order_number ?? "",
-    currency: "USD",
+    currency: invoice.currency ?? "USD",
     subtotal: Number(invoice.subtotal) || 0,
     tax: Number(invoice.tax) || 0,
     total_amount: Number(invoice.total_amount) || 0,
@@ -252,7 +258,10 @@ export default function InvoiceApprovalPage() {
                   ? "Approved"
                   : invoice.processing_status === "PO Completed"
                     ? "PO Completed"
-                    : "Approval Requested"}
+                    : invoice.processing_status === "Pending Approval" ||
+                        invoice.processing_status === "Approval Requested"
+                      ? "Approval Requested"
+                      : invoice.processing_status}
             </h1>
             {!isDecided && (
               <p className="mt-1 font-body-sm text-body-sm text-on-surface-variant">

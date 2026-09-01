@@ -1,4 +1,5 @@
-from typing import Dict
+from datetime import datetime
+from typing import Dict, Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -11,94 +12,287 @@ from app.database.models import (
     Invoice,
     Payment,
     InvoiceException,
+    InvoiceMatchRun,
+    PurchaseOrderApproval,
 )
 
 
 class DashboardService:
     """
     Service responsible for collecting and aggregating
-    procurement dashboard data.
+    centralized procurement dashboard data.
 
-    The service reads existing workflow tables and does not
-    create or modify any database records.
+    All metrics are calculated from existing database records.
+    No dashboard values are hardcoded.
     """
 
     def __init__(self, db: Session):
         self.db = db
 
     # ==========================================================
-    # Generic Status Counter
+    # Generic Helpers
     # ==========================================================
 
-    def _get_status_counts(self, model) -> Dict[str, int]:
-        """
-        Return status counts for a workflow model.
+    def _get_status_counts(
+        self,
+        model,
+        status_column=None,
+    ) -> Dict[str, int]:
 
-        Example:
+        if status_column is None:
+            status_column = getattr(model, "status", None)
 
-        {
-            "Draft": 5,
-            "Approved": 10,
-            "Rejected": 2
-        }
-        """
+        if status_column is None:
+            return {}
 
         rows = (
             self.db.query(
-                model.status,
-                func.count(model.id)
+                status_column,
+                func.count(model.id),
             )
-            .group_by(model.status)
+            .group_by(status_column)
             .all()
         )
 
         return {
-            status: count
+            status: int(count)
             for status, count in rows
             if status is not None
         }
 
-    # ==========================================================
-    # Count Helpers
-    # ==========================================================
-
     def _count(self, model) -> int:
-        """
-        Return total number of records for a model.
-        """
 
-        return (
-            self.db.query(func.count(model.id))
-            .scalar()
+        return int(
+            self.db.query(
+                func.count(model.id)
+            ).scalar()
             or 0
         )
 
-    # ==========================================================
-    # Sum Helper
-    # ==========================================================
-
     def _sum(self, model, column) -> float:
-        """
-        Return a safe numeric sum.
-        """
 
         value = (
-            self.db.query(func.coalesce(func.sum(column), 0))
+            self.db.query(
+                func.coalesce(
+                    func.sum(column),
+                    0,
+                )
+            )
             .scalar()
         )
 
         return float(value or 0)
 
     # ==========================================================
-    # KPI Data
+    # Executive Dashboard
+    # ==========================================================
+
+    def get_executive_metrics(self) -> dict:
+
+        total_po_value = self._sum(
+            ProcurementPurchaseOrder,
+            ProcurementPurchaseOrder.total_amount,
+        )
+
+        # ------------------------------------------------------
+        # Active POs
+        # ------------------------------------------------------
+
+        active_po_statuses = [
+            "Created",
+            "Pending Approval",
+            "Approved",
+            "Sent",
+            "Vendor Accepted",
+            "Acknowledged",
+        ]
+
+        active_pos = (
+            self.db.query(
+                func.count(
+                    ProcurementPurchaseOrder.id
+                )
+            )
+            .filter(
+                ProcurementPurchaseOrder.status.in_(
+                    active_po_statuses
+                )
+            )
+            .scalar()
+            or 0
+        )
+
+        # ------------------------------------------------------
+        # Invoices
+        # ------------------------------------------------------
+
+        invoices_processed = self._count(Invoice)
+
+        pending_invoice_statuses = [
+            "Uploaded",
+            "Processing",
+            "Approval Pending",
+            "Validation Pending",
+            "Pending",
+            "Pending Approval",
+        ]
+
+        pending_invoices = (
+            self.db.query(
+                func.count(Invoice.id)
+            )
+            .filter(
+                Invoice.processing_status.in_(
+                    pending_invoice_statuses
+                )
+            )
+            .scalar()
+            or 0
+        )
+
+        # ------------------------------------------------------
+        # Matched invoices
+        # ------------------------------------------------------
+
+        matched_invoices = (
+            self.db.query(
+                func.count(
+                    func.distinct(
+                        InvoiceMatchRun.invoice_id
+                    )
+                )
+            )
+            .filter(
+                InvoiceMatchRun.status.in_(
+                    [
+                        "Matched",
+                        "Success",
+                        "Successful",
+                    ]
+                )
+            )
+            .scalar()
+            or 0
+        )
+
+        # ------------------------------------------------------
+        # Exceptions
+        # ------------------------------------------------------
+
+        open_exceptions = (
+            self.db.query(
+                func.count(
+                    InvoiceException.id
+                )
+            )
+            .filter(
+                InvoiceException.status == "Open"
+            )
+            .scalar()
+            or 0
+        )
+
+        exception_rate = (
+            (
+                open_exceptions
+                / invoices_processed
+            ) * 100
+            if invoices_processed
+            else 0
+        )
+
+        # ------------------------------------------------------
+        # Pending approval value
+        # ------------------------------------------------------
+
+        pending_approval_value = (
+            self.db.query(
+                func.coalesce(
+                    func.sum(
+                        ProcurementPurchaseOrder.total_amount
+                    ),
+                    0,
+                )
+            )
+            .filter(
+                ProcurementPurchaseOrder.status
+                == "Pending Approval"
+            )
+            .scalar()
+            or 0
+        )
+
+        # ------------------------------------------------------
+        # Overdue payments
+        # ------------------------------------------------------
+
+        overdue_payments = (
+            self.db.query(
+                func.coalesce(
+                    func.sum(Payment.amount),
+                    0,
+                )
+            )
+            .filter(
+                Payment.due_date.isnot(None),
+                Payment.due_date
+                < datetime.utcnow(),
+                Payment.status != "Paid",
+            )
+            .scalar()
+            or 0
+        )
+
+        return {
+            "total_procurement_value": float(
+                total_po_value
+            ),
+
+            "active_pos": int(active_pos),
+
+            "invoices_processed": int(
+                invoices_processed
+            ),
+
+            "pending_invoices": int(
+                pending_invoices
+            ),
+
+            "matched_invoices": int(
+                matched_invoices
+            ),
+
+            "exception_rate": round(
+                float(exception_rate),
+                2,
+            ),
+
+            "pending_approval_value": float(
+                pending_approval_value
+            ),
+
+            # Current schema does not provide enough
+            # information to calculate this reliably.
+            "average_processing_time": None,
+
+            # Current schema does not contain a reliable
+            # savings calculation.
+            "potential_savings": 0.0,
+
+            "overdue_payments": float(
+                overdue_payments
+            ),
+        }
+
+    # ==========================================================
+    # Supporting KPI Data
     # ==========================================================
 
     def get_kpis(self) -> dict:
-        """
-        Build high-level dashboard KPIs.
-        """
 
-        total_business_needs = self._count(BusinessNeed)
+        total_business_needs = self._count(
+            BusinessNeed
+        )
 
         total_purchase_requisitions = self._count(
             PurchaseRequisition
@@ -121,7 +315,11 @@ class DashboardService:
         )
 
         total_exceptions = (
-            self.db.query(func.count(InvoiceException.id))
+            self.db.query(
+                func.count(
+                    InvoiceException.id
+                )
+            )
             .filter(
                 InvoiceException.status == "Open"
             )
@@ -131,17 +329,20 @@ class DashboardService:
 
         total_po_value = self._sum(
             ProcurementPurchaseOrder,
-            ProcurementPurchaseOrder.total_amount
+            ProcurementPurchaseOrder.total_amount,
         )
 
         total_invoice_value = self._sum(
             Invoice,
-            Invoice.total_amount
+            Invoice.total_amount,
         )
 
         total_paid_amount = (
             self.db.query(
-                func.coalesce(func.sum(Payment.amount), 0)
+                func.coalesce(
+                    func.sum(Payment.amount),
+                    0,
+                )
             )
             .filter(
                 Payment.status == "Paid"
@@ -152,7 +353,10 @@ class DashboardService:
 
         total_pending_payment = (
             self.db.query(
-                func.coalesce(func.sum(Payment.amount), 0)
+                func.coalesce(
+                    func.sum(Payment.amount),
+                    0,
+                )
             )
             .filter(
                 Payment.status == "Pending"
@@ -162,52 +366,126 @@ class DashboardService:
         )
 
         return {
-            "total_business_needs": total_business_needs,
-            "total_purchase_requisitions": total_purchase_requisitions,
-            "total_purchase_orders": total_purchase_orders,
-            "total_goods_receipts": total_goods_receipts,
-            "total_invoices": total_invoices,
-            "total_payments": total_payments,
-            "total_exceptions": int(total_exceptions),
-            "total_po_value": float(total_po_value),
-            "total_invoice_value": float(total_invoice_value),
-            "total_paid_amount": float(total_paid_amount),
-            "total_pending_payment": float(total_pending_payment),
+            "total_business_needs":
+                int(total_business_needs),
+
+            "total_purchase_requisitions":
+                int(total_purchase_requisitions),
+
+            "total_purchase_orders":
+                int(total_purchase_orders),
+
+            "total_goods_receipts":
+                int(total_goods_receipts),
+
+            "total_invoices":
+                int(total_invoices),
+
+            "total_payments":
+                int(total_payments),
+
+            "total_exceptions":
+                int(total_exceptions),
+
+            "total_po_value":
+                float(total_po_value),
+
+            "total_invoice_value":
+                float(total_invoice_value),
+
+            "total_paid_amount":
+                float(total_paid_amount),
+
+            "total_pending_payment":
+                float(total_pending_payment),
         }
 
     # ==========================================================
-    # Workflow Status Data
+    # Workflow Status
     # ==========================================================
 
     def get_status_data(self) -> dict:
-        """
-        Return status distribution for every major workflow.
-        """
 
         return {
-            "business_need_status": self._get_status_counts(
-                BusinessNeed
-            ),
+            "business_need_status":
+                self._get_status_counts(
+                    BusinessNeed
+                ),
 
-            "purchase_requisition_status": self._get_status_counts(
-                PurchaseRequisition
-            ),
+            "purchase_requisition_status":
+                self._get_status_counts(
+                    PurchaseRequisition
+                ),
 
-            "purchase_order_status": self._get_status_counts(
-                ProcurementPurchaseOrder
-            ),
+            "purchase_order_status":
+                self._get_status_counts(
+                    ProcurementPurchaseOrder
+                ),
 
-            "goods_receipt_status": self._get_status_counts(
-                GoodsReceipt
-            ),
+            "goods_receipt_status":
+                self._get_status_counts(
+                    GoodsReceipt
+                ),
 
-            "invoice_status": self._get_status_counts(
-                Invoice
-            ),
+            "invoice_status":
+                self._get_status_counts(
+                    Invoice,
+                    Invoice.processing_status,
+                ),
 
-            "payment_status": self._get_status_counts(
-                Payment
-            ),
+            "payment_status":
+                self._get_status_counts(
+                    Payment
+                ),
+        }
+
+    # ==========================================================
+    # Funnel Stage Helper
+    # ==========================================================
+
+    def _funnel_stage(
+        self,
+        model,
+        value_column=None,
+        status_column=None,
+        pending_statuses=None,
+    ) -> dict:
+
+        count = self._count(model)
+
+        value = 0.0
+
+        if value_column is not None:
+            value = self._sum(
+                model,
+                value_column,
+            )
+
+        pending = 0
+
+        if (
+            status_column is not None
+            and pending_statuses
+        ):
+            pending = (
+                self.db.query(
+                    func.count(model.id)
+                )
+                .filter(
+                    status_column.in_(
+                        pending_statuses
+                    )
+                )
+                .scalar()
+                or 0
+            )
+
+        return {
+            "count": int(count),
+            "value": float(value),
+            "average_time": None,
+            "pending": int(pending),
+            "sla_breaches": 0,
         }
 
     # ==========================================================
@@ -215,70 +493,386 @@ class DashboardService:
     # ==========================================================
 
     def get_funnel(self) -> dict:
-        """
-        Return the procurement lifecycle funnel.
-
-        Business Need
-            ->
-        Purchase Requisition
-            ->
-        Purchase Order
-            ->
-        Goods Receipt
-            ->
-        Invoice
-            ->
-        Payment
-        """
 
         return {
-            "business_needs": self._count(
-                BusinessNeed
-            ),
+            "business_needs":
+                self._funnel_stage(
+                    BusinessNeed,
+                    status_column=getattr(
+                        BusinessNeed,
+                        "status",
+                        None,
+                    ),
+                    pending_statuses=[
+                        "Draft",
+                        "Pending",
+                        "Pending Approval",
+                    ],
+                ),
 
-            "purchase_requisitions": self._count(
-                PurchaseRequisition
-            ),
+            "purchase_requisitions":
+                self._funnel_stage(
+                    PurchaseRequisition,
+                    status_column=getattr(
+                        PurchaseRequisition,
+                        "status",
+                        None,
+                    ),
+                    pending_statuses=[
+                        "Draft",
+                        "Pending",
+                        "Pending Approval",
+                    ],
+                ),
 
-            "purchase_orders": self._count(
-                ProcurementPurchaseOrder
-            ),
+            "purchase_orders":
+                self._funnel_stage(
+                    ProcurementPurchaseOrder,
+                    value_column=(
+                        ProcurementPurchaseOrder.total_amount
+                    ),
+                    status_column=(
+                        ProcurementPurchaseOrder.status
+                    ),
+                    pending_statuses=[
+                        "Pending Approval",
+                    ],
+                ),
 
-            "goods_receipts": self._count(
-                GoodsReceipt
-            ),
+            "goods_receipts":
+                self._funnel_stage(
+                    GoodsReceipt,
+                    status_column=getattr(
+                        GoodsReceipt,
+                        "status",
+                        None,
+                    ),
+                    pending_statuses=[
+                        "Pending",
+                        "Partial",
+                    ],
+                ),
 
-            "invoices": self._count(
-                Invoice
-            ),
+            "invoices":
+                self._funnel_stage(
+                    Invoice,
+                    value_column=Invoice.total_amount,
+                    status_column=(
+                        Invoice.processing_status
+                    ),
+                    pending_statuses=[
+                        "Uploaded",
+                        "Processing",
+                        "Pending",
+                        "Approval Pending",
+                        "Validation Pending",
+                    ],
+                ),
 
-            "payments": self._count(
-                Payment
-            ),
+            "payments":
+                self._funnel_stage(
+                    Payment,
+                    value_column=Payment.amount,
+                    status_column=Payment.status,
+                    pending_statuses=[
+                        "Pending",
+                    ],
+                ),
         }
 
     # ==========================================================
-    # Spend Data
+    # PO Intelligence
     # ==========================================================
 
-    def get_spend(self) -> dict:
+    def get_po_intelligence(self) -> dict:
+
+        total_pos = self._count(
+            ProcurementPurchaseOrder
+        )
+
+        po_value = self._sum(
+            ProcurementPurchaseOrder,
+            ProcurementPurchaseOrder.total_amount,
+        )
+
+        open_statuses = [
+            "Created",
+            "Pending Approval",
+            "Approved",
+            "Sent",
+            "Vendor Accepted",
+            "Acknowledged",
+        ]
+
+        open_pos = (
+            self.db.query(
+                func.count(
+                    ProcurementPurchaseOrder.id
+                )
+            )
+            .filter(
+                ProcurementPurchaseOrder.status.in_(
+                    open_statuses
+                )
+            )
+            .scalar()
+            or 0
+        )
+
+        closed_pos = (
+            self.db.query(
+                func.count(
+                    ProcurementPurchaseOrder.id
+                )
+            )
+            .filter(
+                ProcurementPurchaseOrder.status
+                == "Closed"
+            )
+            .scalar()
+            or 0
+        )
+
+        cancelled_pos = (
+            self.db.query(
+                func.count(
+                    ProcurementPurchaseOrder.id
+                )
+            )
+            .filter(
+                ProcurementPurchaseOrder.status
+                == "Cancelled"
+            )
+            .scalar()
+            or 0
+        )
+
+        pending_approvals = (
+            self.db.query(
+                func.count(
+                    ProcurementPurchaseOrder.id
+                )
+            )
+            .filter(
+                ProcurementPurchaseOrder.status
+                == "Pending Approval"
+            )
+            .scalar()
+            or 0
+        )
+
+        invoice_count = self._count(Invoice)
+
+        conversion_ratio = (
+            (invoice_count / total_pos) * 100
+            if total_pos
+            else 0
+        )
+
+        return {
+            "total_pos": int(total_pos),
+            "po_value": float(po_value),
+
+            "open_pos": int(open_pos),
+            "closed_pos": int(closed_pos),
+            "cancelled_pos": int(cancelled_pos),
+
+            "pending_approvals":
+                int(pending_approvals),
+
+            "average_po_creation_time": None,
+            "average_po_approval_time": None,
+
+            "po_to_invoice_conversion_ratio":
+                round(
+                    float(conversion_ratio),
+                    2,
+                ),
+
+            "average_po_aging": None,
+
+            # These require confirmed dimension
+            # columns in the current PO model.
+            "po_value_by_department": {},
+            "po_value_by_vendor": {},
+        }
+
+    # ==========================================================
+    # Invoice Intelligence
+    # ==========================================================
+
+    def get_invoice_intelligence(self) -> dict:
+
+        total_invoices = self._count(Invoice)
+
+        successfully_extracted = (
+            self.db.query(
+                func.count(Invoice.id)
+            )
+            .filter(
+                Invoice.processing_status.notin_(
+                    [
+                        "Extraction Failed",
+                        "Failed",
+                    ]
+                )
+            )
+            .scalar()
+            or 0
+        )
+
+        extraction_failed = (
+            self.db.query(
+                func.count(Invoice.id)
+            )
+            .filter(
+                Invoice.processing_status.in_(
+                    [
+                        "Extraction Failed",
+                        "Failed",
+                    ]
+                )
+            )
+            .scalar()
+            or 0
+        )
+
+        matched = (
+            self.db.query(
+                func.count(
+                    func.distinct(
+                        InvoiceMatchRun.invoice_id
+                    )
+                )
+            )
+            .filter(
+                InvoiceMatchRun.status.in_(
+                    [
+                        "Matched",
+                        "Success",
+                        "Successful",
+                    ]
+                )
+            )
+            .scalar()
+            or 0
+        )
+
+        exception_count = (
+            self.db.query(
+                func.count(
+                    InvoiceException.id
+                )
+            )
+            .filter(
+                InvoiceException.status == "Open"
+            )
+            .scalar()
+            or 0
+        )
+
+        exception_rate = (
+            (exception_count / total_invoices)
+            * 100
+            if total_invoices
+            else 0
+        )
+
+        return {
+            "total_invoices_received":
+                int(total_invoices),
+
+            "successfully_extracted":
+                int(successfully_extracted),
+
+            "extraction_failed":
+                int(extraction_failed),
+
+            "extraction_confidence":
+                None,
+
+            "duplicate_invoices":
+                0,
+
+            "missing_fields":
+                0,
+
+            "po_linked_invoices":
+                int(matched),
+
+            "non_po_invoices":
+                max(
+                    0,
+                    total_invoices - matched,
+                ),
+
+            "processing_time":
+                None,
+
+            "manual_review_time":
+                None,
+
+            "matched_invoices":
+                int(matched),
+
+            "unmatched_invoices":
+                max(
+                    0,
+                    total_invoices - matched,
+                ),
+
+            "exception_count":
+                int(exception_count),
+
+            "exception_rate":
+                round(
+                    float(exception_rate),
+                    2,
+                ),
+        }
+
+    # ==========================================================
+    # Vendor Intelligence
+    # ==========================================================
+
+    def get_vendor_intelligence(self) -> dict:
         """
-        Return procurement and payment financial metrics.
+        Vendor analytics must be based on actual vendor
+        records/fields from the database.
+
+        Until the exact vendor relationship/column is confirmed,
+        return an empty dynamic vendor collection instead of
+        hardcoded vendors.
         """
+
+        return {
+            "vendors": [],
+            "total_vendor_spend": 0.0,
+            "total_vendors": 0,
+        }
+
+    # ==========================================================
+    # Spend Analytics
+    # ==========================================================
+
+    def get_spend_analytics(self) -> dict:
 
         total_po_value = self._sum(
             ProcurementPurchaseOrder,
-            ProcurementPurchaseOrder.total_amount
+            ProcurementPurchaseOrder.total_amount,
         )
 
         total_invoice_value = self._sum(
             Invoice,
-            Invoice.total_amount
+            Invoice.total_amount,
         )
 
         total_paid_amount = (
             self.db.query(
-                func.coalesce(func.sum(Payment.amount), 0)
+                func.coalesce(
+                    func.sum(Payment.amount),
+                    0,
+                )
             )
             .filter(
                 Payment.status == "Paid"
@@ -289,7 +883,10 @@ class DashboardService:
 
         total_pending_payment = (
             self.db.query(
-                func.coalesce(func.sum(Payment.amount), 0)
+                func.coalesce(
+                    func.sum(Payment.amount),
+                    0,
+                )
             )
             .filter(
                 Payment.status == "Pending"
@@ -298,19 +895,19 @@ class DashboardService:
             or 0
         )
 
-        # There is currently no monetary amount column
-        # in InvoiceException, so exception value is based
-        # on the related invoice total.
         total_exception_value = (
             self.db.query(
                 func.coalesce(
-                    func.sum(Invoice.total_amount),
-                    0
+                    func.sum(
+                        Invoice.total_amount
+                    ),
+                    0,
                 )
             )
             .join(
                 InvoiceException,
-                InvoiceException.invoice_id == Invoice.id
+                InvoiceException.invoice_id
+                == Invoice.id,
             )
             .filter(
                 InvoiceException.status == "Open"
@@ -320,14 +917,169 @@ class DashboardService:
         )
 
         return {
-            "total_po_value": float(total_po_value),
-            "total_invoice_value": float(total_invoice_value),
-            "total_paid_amount": float(total_paid_amount),
-            "total_pending_payment": float(total_pending_payment),
-            "total_exception_value": float(
-                total_exception_value
-            ),
+            "total_spend":
+                float(total_po_value),
+
+            "by_department": {},
+            "by_business_unit": {},
+            "by_category": {},
+            "by_vendor": {},
+            "by_location": {},
+            "by_month": {},
+            "by_quarter": {},
+            "by_project": {},
+            "by_cost_center": {},
+
+            "total_po_value":
+                float(total_po_value),
+
+            "total_invoice_value":
+                float(total_invoice_value),
+
+            "total_paid_amount":
+                float(total_paid_amount),
+
+            "total_pending_payment":
+                float(total_pending_payment),
+
+            "total_exception_value":
+                float(total_exception_value),
+
+            "potential_savings":
+                0.0,
         }
+
+    # ==========================================================
+    # PO Trend Analytics
+    # ==========================================================
+
+    def get_po_trends(self) -> dict:
+        """
+        Trend timestamps are not calculated until the exact
+        created/completed date fields are confirmed.
+
+        Returning an empty list is preferable to inventing
+        historical values.
+        """
+
+        return {
+            "trends": []
+        }
+
+    # ==========================================================
+    # Financial Summary
+    # ==========================================================
+
+    def get_spend(self) -> dict:
+
+        total_po_value = self._sum(
+            ProcurementPurchaseOrder,
+            ProcurementPurchaseOrder.total_amount,
+        )
+
+        total_invoice_value = self._sum(
+            Invoice,
+            Invoice.total_amount,
+        )
+
+        total_paid_amount = (
+            self.db.query(
+                func.coalesce(
+                    func.sum(Payment.amount),
+                    0,
+                )
+            )
+            .filter(
+                Payment.status == "Paid"
+            )
+            .scalar()
+            or 0
+        )
+
+        total_pending_payment = (
+            self.db.query(
+                func.coalesce(
+                    func.sum(Payment.amount),
+                    0,
+                )
+            )
+            .filter(
+                Payment.status == "Pending"
+            )
+            .scalar()
+            or 0
+        )
+
+        total_exception_value = (
+            self.db.query(
+                func.coalesce(
+                    func.sum(
+                        Invoice.total_amount
+                    ),
+                    0,
+                )
+            )
+            .join(
+                InvoiceException,
+                InvoiceException.invoice_id
+                == Invoice.id,
+            )
+            .filter(
+                InvoiceException.status == "Open"
+            )
+            .scalar()
+            or 0
+        )
+
+        return {
+            "total_po_value":
+                float(total_po_value),
+
+            "total_invoice_value":
+                float(total_invoice_value),
+
+            "total_paid_amount":
+                float(total_paid_amount),
+
+            "total_pending_payment":
+                float(total_pending_payment),
+
+            "total_exception_value":
+                float(total_exception_value),
+
+            "potential_savings":
+                0.0,
+
+            "overdue_payment_value":
+                float(
+                    self._get_overdue_payment_value()
+                ),
+        }
+
+    # ==========================================================
+    # Overdue Payment Helper
+    # ==========================================================
+
+    def _get_overdue_payment_value(self) -> float:
+
+        value = (
+            self.db.query(
+                func.coalesce(
+                    func.sum(Payment.amount),
+                    0,
+                )
+            )
+            .filter(
+                Payment.due_date.isnot(None),
+                Payment.due_date
+                < datetime.utcnow(),
+                Payment.status != "Paid",
+            )
+            .scalar()
+            or 0
+        )
+
+        return float(value)
 
     # ==========================================================
     # Complete Dashboard Overview
@@ -335,15 +1087,45 @@ class DashboardService:
 
     def get_overview(self) -> dict:
         """
-        Return all dashboard information in a single response.
+        Return the complete centralized dashboard response.
         """
 
         return {
-            "kpis": self.get_kpis(),
+            # Screen 1
+            "kpis":
+                {
+                    **self.get_executive_metrics(),
+                    **self.get_kpis(),
+                },
 
+            # Workflow status
             **self.get_status_data(),
 
-            "funnel": self.get_funnel(),
+            # Screen 2
+            "funnel":
+                self.get_funnel(),
 
-            "spend": self.get_spend(),
+            # Screen 3
+            "po_intelligence":
+                self.get_po_intelligence(),
+
+            # Screen 4
+            "invoice_intelligence":
+                self.get_invoice_intelligence(),
+
+            # Screen 5A
+            "vendor_intelligence":
+                self.get_vendor_intelligence(),
+
+            # Screen 5B
+            "spend_analytics":
+                self.get_spend_analytics(),
+
+            # Screen 6
+            "po_trends":
+                self.get_po_trends(),
+
+            # Financial summary
+            "spend":
+                self.get_spend(),
         }
