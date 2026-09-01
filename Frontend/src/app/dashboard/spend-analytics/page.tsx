@@ -2,39 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import {
+  getDashboardOverview,
+  type DashboardOverview,
+} from "@/services/api";
 
-interface DashboardOverview {
-  spend: {
-    total_po_value: number;
-    total_invoice_value: number;
-    total_paid_amount: number;
-    total_pending_payment: number;
-    total_exception_value: number;
-  };
-}
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 async function loadSpend(): Promise<DashboardOverview> {
-  const token = localStorage.getItem("access_token");
-
-  const response = await fetch(
-    `${API_URL}/dashboard/overview`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      cache: "no-store",
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to load spend analytics: ${response.status}`
-    );
-  }
-
-  return response.json();
+  return getDashboardOverview();
 }
 
 export default function SpendAnalyticsPage() {
@@ -69,6 +44,7 @@ export default function SpendAnalyticsPage() {
   }
 
   const spend = data?.spend;
+  const analytics = data?.spend_analytics;
 
   return (
     <main className="min-h-screen bg-surface pt-24 pb-12">
@@ -132,54 +108,64 @@ export default function SpendAnalyticsPage() {
 
         <section className="mt-8 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6">
 
-          <h2 className="text-xl font-semibold text-on-surface">
-            Spend Breakdown
-          </h2>
+          <div className="mb-5">
+            <h2 className="text-xl font-semibold text-on-surface">
+              Spend Breakdown
+            </h2>
 
-          <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <p className="mt-1 text-sm text-on-surface-variant">
+              Procurement spend across key business dimensions.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 
             <BreakdownCard
               title="Department"
+              data={analytics?.by_department ?? {}}
             />
 
             <BreakdownCard
               title="Business Unit"
+              data={analytics?.by_business_unit ?? {}}
             />
 
             <BreakdownCard
               title="Category"
+              data={analytics?.by_category ?? {}}
             />
 
             <BreakdownCard
               title="Vendor"
+              data={analytics?.by_vendor ?? {}}
             />
 
             <BreakdownCard
               title="Location"
+              data={analytics?.by_location ?? {}}
             />
 
             <BreakdownCard
               title="Month"
+              data={analytics?.by_month ?? {}}
             />
 
             <BreakdownCard
               title="Quarter"
+              data={analytics?.by_quarter ?? {}}
             />
 
             <BreakdownCard
               title="Project"
+              data={analytics?.by_project ?? {}}
             />
 
             <BreakdownCard
               title="Cost Center"
+              data={analytics?.by_cost_center ?? {}}
             />
 
           </div>
-
-          <p className="mt-6 text-sm text-on-surface-variant">
-            Detailed breakdowns require grouped analytics
-            endpoints from the backend.
-          </p>
 
         </section>
 
@@ -210,20 +196,42 @@ function Card({
 
 function BreakdownCard({
   title,
+  data,
 }: {
   title: string;
+  data: Record<string, number>;
 }) {
+  const entries = Object.entries(data);
+
   return (
-    <div className="rounded-lg bg-surface-container p-5">
+    <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-5">
 
       <h3 className="font-semibold text-on-surface">
         Spend by {title}
       </h3>
 
-      <p className="mt-3 text-sm text-on-surface-variant">
-        Detailed analytics will be displayed here when
-        grouped spend data is available.
-      </p>
+      {entries.length === 0 ? (
+        <p className="mt-4 text-sm text-on-surface-variant">
+          No data available.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {entries.map(([name, value]) => (
+            <div
+              key={name}
+              className="flex items-center justify-between gap-4"
+            >
+              <span className="truncate text-sm text-on-surface-variant">
+                {name}
+              </span>
+
+              <span className="shrink-0 font-semibold text-on-surface">
+                {formatCurrency(value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
     </div>
   );
