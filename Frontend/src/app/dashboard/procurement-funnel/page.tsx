@@ -2,15 +2,24 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+interface FunnelStage {
+  count: number;
+  value: number;
+  average_time: number;
+  pending: number;
+  sla_breaches: number;
+}
 
 interface DashboardOverview {
   funnel: {
-    business_needs: number;
-    purchase_requisitions: number;
-    purchase_orders: number;
-    goods_receipts: number;
-    invoices: number;
-    payments: number;
+    business_needs: FunnelStage;
+    purchase_requisitions: FunnelStage;
+    purchase_orders: FunnelStage;
+    goods_receipts: FunnelStage;
+    invoices: FunnelStage;
+    payments: FunnelStage;
   };
 }
 
@@ -39,6 +48,7 @@ async function loadFunnel(): Promise<DashboardOverview> {
 }
 
 export default function ProcurementFunnelPage() {
+  const router = useRouter();
   const [data, setData] =
     useState<DashboardOverview | null>(null);
 
@@ -75,32 +85,38 @@ export default function ProcurementFunnelPage() {
     {
       number: 1,
       name: "Business Needs",
-      count: funnel?.business_needs ?? 0,
+      route: "/dashboard/business-needs",
+      data: funnel?.business_needs,
     },
     {
       number: 2,
       name: "Purchase Requisitions",
-      count: funnel?.purchase_requisitions ?? 0,
+      route: "/dashboard/purchase-requisitions",
+      data: funnel?.purchase_requisitions,
     },
     {
       number: 3,
       name: "Purchase Orders",
-      count: funnel?.purchase_orders ?? 0,
+      route: "/dashboard/purchase-orders",
+      data: funnel?.purchase_orders,
     },
     {
       number: 4,
       name: "Goods Receipts",
-      count: funnel?.goods_receipts ?? 0,
+      route: "/dashboard/goods-receipts",
+      data: funnel?.goods_receipts,
     },
     {
       number: 5,
       name: "Invoices",
-      count: funnel?.invoices ?? 0,
+      route: "/dashboard/invoices",
+      data: funnel?.invoices,
     },
     {
       number: 6,
       name: "Payments",
-      count: funnel?.payments ?? 0,
+      route: "/dashboard/payments",
+      data: funnel?.payments,
     },
   ];
 
@@ -129,9 +145,11 @@ export default function ProcurementFunnelPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
 
           {stages.map((stage) => (
-            <div
+            <button
+              type="button"
               key={stage.name}
-              className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6"
+              onClick={() => router.push(stage.route)}
+              className="w-full text-left rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 transition-all hover:-translate-y-1 hover:shadow-md cursor-pointer"
             >
 
               <div className="flex items-center justify-between">
@@ -153,39 +171,39 @@ export default function ProcurementFunnelPage() {
               </h2>
 
               <p className="mt-2 text-3xl font-bold text-primary">
-                {stage.count}
+                {stage.data?.count ?? 0}
               </p>
 
               <div className="mt-5 space-y-2 text-sm">
 
                 <Row
                   label="Count"
-                  value={String(stage.count)}
+                  value={String(stage.data?.count ?? 0)}
                 />
 
                 <Row
                   label="Value"
-                  value="API data required"
+                  value={formatCurrency(stage.data?.value ?? 0)}
                 />
 
                 <Row
                   label="Average Time"
-                  value="API data required"
+                  value={`${stage.data?.average_time ?? 0}`}
                 />
 
                 <Row
                   label="Pending"
-                  value="API data required"
+                  value={String(stage.data?.pending ?? 0)}
                 />
 
                 <Row
                   label="SLA Breaches"
-                  value="API data required"
+                  value={String(stage.data?.sla_breaches ?? 0)}
                 />
 
               </div>
 
-            </div>
+            </button>
           ))}
 
         </div>
@@ -233,4 +251,12 @@ function ErrorState({ message }: { message: string }) {
       </div>
     </main>
   );
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
 }

@@ -37,18 +37,26 @@ export default function Header() {
   };
 
   return (
-    <header className="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-outline-variant/30">
-      <div className="h-16 w-full max-w-container-max mx-auto px-margin-desktop flex items-center justify-between">
-        <div className="flex items-center gap-8">
-          <span className="font-title-lg text-title-lg text-on-surface whitespace-nowrap">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-outline-variant/30">
+      <div className="h-16 w-full px-6 lg:px-8 flex items-center justify-between">
+
+        {/* Left side: Logo + Navigation */}
+        <div className="flex items-center gap-8 min-w-0">
+
+          <Link
+            href="/dashboard"
+            className="font-title-lg text-title-lg text-on-surface whitespace-nowrap"
+          >
             CloudGate
-          </span>
+          </Link>
+
           <nav className="hidden sm:flex items-center gap-1">
             {NAV_LINKS.map((link) => {
               const active =
                 link.href === "/dashboard"
                   ? pathname === "/dashboard"
                   : pathname?.startsWith(link.href);
+
               return (
                 <Link
                   key={link.href}
@@ -64,8 +72,12 @@ export default function Header() {
               );
             })}
           </nav>
+
         </div>
-        <div className="flex items-center gap-4 relative">
+
+        {/* Right side: Profile */}
+        <div className="flex items-center gap-4 relative shrink-0">
+
           <button
             onClick={() => setMenuOpen((v) => !v)}
             className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary text-[13px] font-semibold"
@@ -77,27 +89,34 @@ export default function Header() {
               </span>
             )}
           </button>
+
           {menuOpen && (
             <div className="absolute right-0 top-10 w-56 bg-surface-container-lowest rounded-lg shadow-xl border border-outline-variant/20 py-2 z-50">
+
               {user && (
                 <div className="px-4 py-2 border-b border-outline-variant/20">
                   <p className="font-body-md text-body-md text-on-surface truncate">
                     {user.username}
                   </p>
+
                   <p className="font-label-md text-label-md text-on-surface-variant truncate">
                     {user.email}
                   </p>
                 </div>
               )}
+
               <button
                 onClick={handleSignOut}
                 className="w-full text-left px-4 py-2 font-body-md text-body-md text-on-surface hover:bg-surface-container transition-colors"
               >
                 Sign out
               </button>
+
             </div>
           )}
+
         </div>
+
       </div>
     </header>
   );

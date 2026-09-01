@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Dict, Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, extract
 from sqlalchemy.orm import Session
 
 from app.database.models import (
@@ -26,8 +26,13 @@ class DashboardService:
     No dashboard values are hardcoded.
     """
 
-    def __init__(self, db: Session):
+    def __init__(
+        self,
+        db: Session,
+        user_id: int | None = None,
+    ):
         self.db = db
+        self.user_id = user_id
 
     # ==========================================================
     # Generic Helpers
@@ -100,10 +105,9 @@ class DashboardService:
 
         active_po_statuses = [
             "Created",
-            "Pending Approval",
+            "Approval Pending",
             "Approved",
             "Sent",
-            "Vendor Accepted",
             "Acknowledged",
         ]
 
@@ -837,18 +841,274 @@ class DashboardService:
 
     def get_vendor_intelligence(self) -> dict:
         """
-        Vendor analytics must be based on actual vendor
-        records/fields from the database.
-
-        Until the exact vendor relationship/column is confirmed,
-        return an empty dynamic vendor collection instead of
-        hardcoded vendors.
+        Build vendor analytics from actual PO and invoice records.
         """
 
+        # ------------------------------------------------------
+        # Purchase Orders grouped by vendor
+        # ------------------------------------------------------
+
+        po_rows = (
+            self.db.query(
+                ProcurementPurchaseOrder.vendor_name,
+                func.count(ProcurementPurchaseOrder.id),
+                func.coalesce(
+                    func.sum(
+                        ProcurementPurchaseOrder.total_amount
+                    ),
+                    0,
+                ),
+            )
+            .filter(
+                ProcurementPurchaseOrder.vendor_name.isnot(None)
+            )
+            .group_by(
+                ProcurementPurchaseOrder.vendor_name
+            )
+            .all()
+        )
+
+        # ------------------------------------------------------
+        # Invoices grouped by vendor
+        # ------------------------------------------------------
+
+        invoice_rows = (
+            self.db.query(
+                Invoice.vendor_name,
+                func.count(Invoice.id),
+                func.coalesce(
+                    func.sum(Invoice.total_amount),
+                    0,
+                ),
+                func.coalesce(
+                    func.avg(Invoice.total_amount),
+                    0,
+                ),
+            )
+            .filter(
+                Invoice.vendor_name.isnot(None)
+            )
+            .group_by(
+                Invoice.vendor_name
+            )
+            .all()
+        )
+
+        po_data = {
+            vendor: {
+                "number_of_pos": int(po_count),
+                "po_spend": float(po_spend),
+            }
+            for vendor, po_count, po_spend in po_rows
+            if vendor
+        }
+
+        invoice_data = {
+            vendor: {
+                "number_of_invoices": int(invoice_count),
+                "invoice_spend": float(invoice_spend),
+                "average_invoice_value": float(
+                    average_invoice_value or 0
+                ),
+            }
+            for (
+                vendor,
+                invoice_count,
+                invoice_spend,
+                average_invoice_value,
+            ) in invoice_rows
+            if vendor
+        }
+
+        vendor_names = set(po_data) | set(invoice_data)
+
+        vendors = []
+
+        for vendor_name in sorted(vendor_names):
+
+            po = po_data.get(
+                vendor_name,
+                {
+                    "number_of_pos": 0,
+                    "po_spend": 0.0,
+                },
+            )
+
+            invoice = invoice_data.get(
+                vendor_name,
+                {
+                    "number_of_invoices": 0,
+                    "invoice_spend": 0.0,
+                    "average_invoice_value": 0.0,
+                },
+            )
+
+            # --------------------------------------------------
+            # Exception count
+            # --------------------------------------------------
+
+            exception_count = (
+                self.db.query(
+                    func.count(
+                        func.distinct(
+                            InvoiceException.invoice_id
+                        )
+                    )
+                )
+                .join(
+                    Invoice,
+                    Invoice.id
+                    == InvoiceException.invoice_id,
+                )
+                .filter(
+                    Invoice.vendor_name
+                    == vendor_name,
+                    InvoiceException.status == "Open",
+                )
+                .scalar()
+                or 0
+            )
+
+            invoice_count = invoice[
+                "number_of_invoices"
+            ]
+
+            exception_rate = (
+                (
+                    exception_count
+                    / invoice_count
+                ) * 100
+                if invoice_count
+                else 0
+            )
+
+            # --------------------------------------------------
+            # Price variance
+            # --------------------------------------------------
+
+            price_variance = (
+                self.db.query(
+                    func.coalesce(
+                        func.sum(
+                            PurchaseRequisition.price_variance
+                        ),
+                        0,
+                    )
+                )
+                .join(
+                    ProcurementPurchaseOrder,
+                    ProcurementPurchaseOrder.purchase_requisition_id
+                    == PurchaseRequisition.id,
+                )
+                .filter(
+                    ProcurementPurchaseOrder.vendor_name
+                    == vendor_name
+                )
+                .scalar()
+                or 0
+            )
+
+            vendors.append(
+                {
+                    "vendor_name": vendor_name,
+
+                    "overall_score": None,
+
+                    "on_time_delivery": None,
+
+                    "invoice_accuracy": (
+                        (
+                            (
+                                invoice_count
+                                - exception_count
+                            )
+                            / invoice_count
+                        ) * 100
+                        if invoice_count
+                        else None
+                    ),
+
+                    "po_compliance": None,
+
+                    "price_variance": float(
+                        price_variance
+                    ),
+
+                    "exception_rate": round(
+                        float(exception_rate),
+                        2,
+                    ),
+
+                    "payment_dispute": None,
+
+                    "total_spend": float(
+                        po["po_spend"]
+                    ),
+
+                    "number_of_pos": int(
+                        po["number_of_pos"]
+                    ),
+
+                    "number_of_invoices": int(
+                        invoice_count
+                    ),
+
+                    "average_invoice_value": float(
+                        invoice[
+                            "average_invoice_value"
+                        ]
+                    ),
+
+                    "payment_terms": None,
+
+                    "average_payment_time": None,
+                }
+            )
+
+        total_vendor_spend = sum(
+            vendor["total_spend"]
+            for vendor in vendors
+        )
+
         return {
-            "vendors": [],
-            "total_vendor_spend": 0.0,
-            "total_vendors": 0,
+            "vendors": vendors,
+            "total_vendor_spend": float(
+                total_vendor_spend
+            ),
+            "total_vendors": len(vendors),
+        }
+
+    def _group_spend_by(
+        self,
+        column,
+    ) -> dict:
+
+        rows = (
+            self.db.query(
+                column,
+                func.coalesce(
+                    func.sum(
+                        ProcurementPurchaseOrder.total_amount
+                    ),
+                    0,
+                ),
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                column.isnot(None)
+            )
+            .group_by(column)
+            .all()
+        )
+
+        return {
+            str(key): float(value or 0)
+            for key, value in rows
+            if key
         }
 
     # ==========================================================
@@ -920,15 +1180,35 @@ class DashboardService:
             "total_spend":
                 float(total_po_value),
 
-            "by_department": {},
-            "by_business_unit": {},
+            "by_department": self._group_spend_by(
+                PurchaseRequisition.department
+            ),
+
+            "by_business_unit": self._group_spend_by(
+                PurchaseRequisition.business_unit
+            ),
+
             "by_category": {},
-            "by_vendor": {},
-            "by_location": {},
+
+            "by_vendor": self._group_spend_by(
+                ProcurementPurchaseOrder.vendor_name
+            ),
+
+            "by_location": self._group_spend_by(
+                PurchaseRequisition.location
+            ),
+
             "by_month": {},
+
             "by_quarter": {},
-            "by_project": {},
-            "by_cost_center": {},
+
+            "by_project": self._group_spend_by(
+                PurchaseRequisition.project
+            ),
+
+            "by_cost_center": self._group_spend_by(
+                PurchaseRequisition.cost_center
+            ),
 
             "total_po_value":
                 float(total_po_value),
@@ -955,15 +1235,291 @@ class DashboardService:
 
     def get_po_trends(self) -> dict:
         """
-        Trend timestamps are not calculated until the exact
-        created/completed date fields are confirmed.
+        Return monthly procurement trend data.
 
-        Returning an empty list is preferable to inventing
-        historical values.
+        Supports both:
+            - SQLite for local development
+            - PostgreSQL for production
         """
 
+        # ------------------------------------------------------
+        # Database-compatible monthly period expression
+        # ------------------------------------------------------
+
+        dialect = self.db.get_bind().dialect.name
+
+        if dialect == "sqlite":
+            po_period = func.strftime(
+                "%Y-%m",
+                ProcurementPurchaseOrder.created_at,
+            )
+
+            invoice_period = func.strftime(
+                "%Y-%m",
+                Invoice.created_at,
+            )
+
+            payment_period = func.strftime(
+                "%Y-%m",
+                Payment.created_at,
+            )
+
+            exception_period = func.strftime(
+                "%Y-%m",
+                InvoiceException.created_at,
+            )
+
+        else:
+            po_period = func.to_char(
+                ProcurementPurchaseOrder.created_at,
+                "YYYY-MM",
+            )
+
+            invoice_period = func.to_char(
+                Invoice.created_at,
+                "YYYY-MM",
+            )
+
+            payment_period = func.to_char(
+                Payment.created_at,
+                "YYYY-MM",
+            )
+
+            exception_period = func.to_char(
+                InvoiceException.created_at,
+                "YYYY-MM",
+            )
+
+        # ------------------------------------------------------
+        # Purchase Order Trends
+        # ------------------------------------------------------
+
+        po_rows = (
+            self.db.query(
+                po_period.label("period"),
+
+                func.coalesce(
+                    func.sum(
+                        ProcurementPurchaseOrder.total_amount
+                    ),
+                    0,
+                ).label("po_value"),
+
+                func.count(
+                    ProcurementPurchaseOrder.id
+                ).label("number_of_pos"),
+            )
+            .group_by(po_period)
+            .order_by(po_period)
+            .all()
+        )
+
+        # ------------------------------------------------------
+        # Invoice Trends
+        # ------------------------------------------------------
+
+        invoice_rows = (
+            self.db.query(
+                invoice_period.label("period"),
+
+                func.coalesce(
+                    func.sum(
+                        Invoice.total_amount
+                    ),
+                    0,
+                ).label("invoice_value"),
+
+                func.count(
+                    Invoice.id
+                ).label("number_of_invoices"),
+            )
+            .group_by(invoice_period)
+            .order_by(invoice_period)
+            .all()
+        )
+
+        # ------------------------------------------------------
+        # Payment Trends
+        # ------------------------------------------------------
+
+        payment_rows = (
+            self.db.query(
+                payment_period.label("period"),
+
+                func.coalesce(
+                    func.sum(
+                        Payment.amount
+                    ),
+                    0,
+                ).label("payment_value"),
+            )
+            .group_by(payment_period)
+            .order_by(payment_period)
+            .all()
+        )
+
+        # ------------------------------------------------------
+        # Exception Trends
+        # ------------------------------------------------------
+
+        exception_rows = (
+            self.db.query(
+                exception_period.label("period"),
+
+                func.count(
+                    InvoiceException.id
+                ).label("exceptions"),
+            )
+            .group_by(exception_period)
+            .order_by(exception_period)
+            .all()
+        )
+
+        # ------------------------------------------------------
+        # Prepare data
+        # ------------------------------------------------------
+
+        periods = set()
+
+        po_data = {}
+        invoice_data = {}
+        payment_data = {}
+        exception_data = {}
+
+        # ------------------------------------------------------
+        # PO data
+        # ------------------------------------------------------
+
+        for row in po_rows:
+            if row.period is None:
+                continue
+
+            periods.add(row.period)
+
+            po_data[row.period] = {
+                "po_value": float(
+                    row.po_value or 0
+                ),
+
+                "number_of_pos": int(
+                    row.number_of_pos or 0
+                ),
+            }
+
+        # ------------------------------------------------------
+        # Invoice data
+        # ------------------------------------------------------
+
+        for row in invoice_rows:
+            if row.period is None:
+                continue
+
+            periods.add(row.period)
+
+            invoice_data[row.period] = {
+                "invoice_value": float(
+                    row.invoice_value or 0
+                ),
+
+                "number_of_invoices": int(
+                    row.number_of_invoices or 0
+                ),
+            }
+
+        # ------------------------------------------------------
+        # Payment data
+        # ------------------------------------------------------
+
+        for row in payment_rows:
+            if row.period is None:
+                continue
+
+            periods.add(row.period)
+
+            payment_data[row.period] = float(
+                row.payment_value or 0
+            )
+
+        # ------------------------------------------------------
+        # Exception data
+        # ------------------------------------------------------
+
+        for row in exception_rows:
+            if row.period is None:
+                continue
+
+            periods.add(row.period)
+
+            exception_data[row.period] = int(
+                row.exceptions or 0
+            )
+
+        # ------------------------------------------------------
+        # Build final trend response
+        # ------------------------------------------------------
+
+        trends = []
+
+        for period in sorted(periods):
+
+            po = po_data.get(
+                period,
+                {
+                    "po_value": 0.0,
+                    "number_of_pos": 0,
+                },
+            )
+
+            invoice = invoice_data.get(
+                period,
+                {
+                    "invoice_value": 0.0,
+                    "number_of_invoices": 0,
+                },
+            )
+
+            trends.append(
+                {
+                    "period": period,
+
+                    "po_value": float(
+                        po["po_value"]
+                    ),
+
+                    "invoice_value": float(
+                        invoice["invoice_value"]
+                    ),
+
+                    "payment_value": float(
+                        payment_data.get(
+                            period,
+                            0.0,
+                        )
+                    ),
+
+                    "number_of_pos": int(
+                        po["number_of_pos"]
+                    ),
+
+                    "number_of_invoices": int(
+                        invoice[
+                            "number_of_invoices"
+                        ]
+                    ),
+
+                    "exceptions": int(
+                        exception_data.get(
+                            period,
+                            0,
+                        )
+                    ),
+
+                    "savings": 0.0,
+                }
+            )
+
         return {
-            "trends": []
+            "trends": trends
         }
 
     # ==========================================================

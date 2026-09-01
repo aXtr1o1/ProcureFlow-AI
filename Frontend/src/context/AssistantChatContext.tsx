@@ -186,7 +186,7 @@ export function AssistantChatProvider({ children }: { children: ReactNode }) {
     const timeout = window.setTimeout(() => controller.abort(), 120000);
 
     try {
-      const response = await fetch(`${API_URL}/azure-openai/chat`, {
+      const response = await fetch(`${API_URL}/gemini/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

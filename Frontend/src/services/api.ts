@@ -1,5 +1,108 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+export interface DashboardOverview {
+  funnel: {
+    business_needs: {
+      count: number;
+      value: number;
+      average_time: number;
+      pending: number;
+      sla_breaches: number;
+    };
+    purchase_requisitions: {
+      count: number;
+      value: number;
+      average_time: number;
+      pending: number;
+      sla_breaches: number;
+    };
+    purchase_orders: {
+      count: number;
+      value: number;
+      average_time: number;
+      pending: number;
+      sla_breaches: number;
+    };
+    goods_receipts: {
+      count: number;
+      value: number;
+      average_time: number;
+      pending: number;
+      sla_breaches: number;
+    };
+    invoices: {
+      count: number;
+      value: number;
+      average_time: number;
+      pending: number;
+      sla_breaches: number;
+    };
+    payments: {
+      count: number;
+      value: number;
+      average_time: number;
+      pending: number;
+      sla_breaches: number;
+    };
+  };
+
+  spend: {
+    total_po_value: number;
+    total_invoice_value: number;
+    total_paid_amount: number;
+    total_pending_payment: number;
+    total_exception_value: number;
+  };
+
+  vendor_intelligence?: {
+    vendors?: Array<{
+      vendor_name: string;
+      overall_score?: number | null;
+      on_time_delivery?: number | null;
+      invoice_accuracy?: number | null;
+      po_compliance?: number | null;
+      price_variance?: number | null;
+      exception_rate?: number | null;
+      payment_dispute?: number | null;
+      total_spend?: number;
+      number_of_pos?: number;
+      number_of_invoices?: number;
+      average_invoice_value?: number;
+      payment_terms?: string | null;
+      average_payment_time?: number | null;
+    }>;
+
+    total_vendor_spend?: number;
+    total_vendors?: number;
+  };
+
+  spend_analytics?: {
+    total_spend?: number;
+    by_department?: Record<string, number>;
+    by_business_unit?: Record<string, number>;
+    by_category?: Record<string, number>;
+    by_vendor?: Record<string, number>;
+    by_location?: Record<string, number>;
+    by_month?: Record<string, number>;
+    by_quarter?: Record<string, number>;
+    by_project?: Record<string, number>;
+    by_cost_center?: Record<string, number>;
+  };
+
+  po_trends?: {
+    trends?: Array<{
+      period: string;
+      po_value: number;
+      invoice_value: number;
+      payment_value: number;
+      number_of_pos: number;
+      number_of_invoices: number;
+      exceptions: number;
+      savings: number;
+    }>;
+  };
+}
+
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem("access_token");
 
@@ -120,6 +223,48 @@ export async function analyzeInvoice(file: File) {
     const message = Array.isArray(detail)
       ? detail.map((item: { msg?: string }) => item.msg || String(item)).join(", ")
       : detail || "Invoice analysis failed.";
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+// ==========================================================
+// Dashboard Overview
+// ==========================================================
+
+export async function getDashboardOverview(): Promise<DashboardOverview> {
+  const response = await fetch(
+    `${API_URL}/dashboard/overview`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    }
+  );
+
+  const data = await response.json();
+
+  console.log("Dashboard Overview Status:", response.status);
+  console.log("Dashboard Overview Response:", data);
+
+  if (response.status === 401) {
+    localStorage.removeItem("access_token");
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (!response.ok) {
+    const detail = data?.detail;
+
+    const message = Array.isArray(detail)
+      ? detail
+          .map(
+            (item: { msg?: string }) =>
+              item.msg || String(item)
+          )
+          .join(", ")
+      : detail || "Failed to load dashboard overview.";
+
     throw new Error(message);
   }
 
