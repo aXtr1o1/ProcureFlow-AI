@@ -2,6 +2,17 @@
 
 import { useEffect, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Check,
+  ArrowRight,
+  UserPlus,
+  ArrowLeft,
+  Badge,
+} from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 type View = "login" | "signupSelection" | "signupCredentials";
@@ -105,9 +116,7 @@ export default function LoginPage() {
                       Corporate Email
                     </label>
                     <div className="relative group">
-                      <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-primary transition-colors">
-                        alternate_email
-                      </span>
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-outline group-focus-within:text-primary transition-colors" />
                       <input
                         id="email"
                         type="email"
@@ -136,9 +145,7 @@ export default function LoginPage() {
                       </a>
                     </div>
                     <div className="relative group">
-                      <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-primary transition-colors">
-                        lock
-                      </span>
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-outline group-focus-within:text-primary transition-colors" />
                       <input
                         id="password"
                         type={showPassword ? "text" : "password"}
@@ -153,9 +160,11 @@ export default function LoginPage() {
                         onClick={() => setShowPassword((v) => !v)}
                         className="absolute right-4 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface transition-colors"
                       >
-                        <span className="material-symbols-outlined">
-                          {showPassword ? "visibility_off" : "visibility"}
-                        </span>
+                        {showPassword ? (
+                          <EyeOff className="h-5 w-5" />
+                        ) : (
+                          <Eye className="h-5 w-5" />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -169,9 +178,7 @@ export default function LoginPage() {
                         onChange={(e) => setRemember(e.target.checked)}
                         className="peer h-5 w-5 cursor-pointer appearance-none rounded border-2 border-outline checked:bg-primary checked:border-primary transition-all"
                       />
-                      <span className="material-symbols-outlined absolute text-on-primary text-[14px] left-1 opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none">
-                        check
-                      </span>
+                      <Check className="absolute text-on-primary h-3.5 w-3.5 left-[3px] opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
                     </div>
                     <label
                       htmlFor="remember"
@@ -188,9 +195,7 @@ export default function LoginPage() {
                   >
                     <span>{submitting ? "Signing in…" : "Sign In"}</span>
                     {!submitting && (
-                      <span className="material-symbols-outlined group-hover:translate-x-1 transition-transform">
-                        arrow_forward
-                      </span>
+                      <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
                     )}
                   </button>
                 </form>
@@ -250,9 +255,7 @@ export default function LoginPage() {
                       setView("login");
                     }}
                   >
-                    <span className="material-symbols-outlined text-sm">
-                      arrow_back
-                    </span>
+                    <ArrowLeft className="h-4 w-4" />
 
                     Back to Login
                   </button>
@@ -274,9 +277,7 @@ export default function LoginPage() {
                       Username
                     </label>
                     <div className="relative group">
-                      <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-primary transition-colors">
-                        badge
-                      </span>
+                      <Badge className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-outline group-focus-within:text-primary transition-colors" />
                       <input
                         id="reg-username"
                         type="text"
@@ -297,9 +298,7 @@ export default function LoginPage() {
                       Corporate Email
                     </label>
                     <div className="relative group">
-                      <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-primary transition-colors">
-                        alternate_email
-                      </span>
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-outline group-focus-within:text-primary transition-colors" />
                       <input
                         id="reg-email"
                         type="email"
@@ -320,9 +319,7 @@ export default function LoginPage() {
                       Password
                     </label>
                     <div className="relative group">
-                      <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-primary transition-colors">
-                        lock
-                      </span>
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-outline group-focus-within:text-primary transition-colors" />
                       <input
                         id="reg-password"
                         type={showRegPassword ? "text" : "password"}
@@ -337,9 +334,11 @@ export default function LoginPage() {
                         onClick={() => setShowRegPassword((v) => !v)}
                         className="absolute right-4 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface transition-colors"
                       >
-                        <span className="material-symbols-outlined">
-                          {showRegPassword ? "visibility_off" : "visibility"}
-                        </span>
+                        {showRegPassword ? (
+                          <EyeOff className="h-5 w-5" />
+                        ) : (
+                          <Eye className="h-5 w-5" />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -351,9 +350,7 @@ export default function LoginPage() {
                   >
                     <span>{submitting ? "Creating…" : "Create Account"}</span>
                     {!submitting && (
-                      <span className="material-symbols-outlined group-hover:translate-x-1 transition-transform">
-                        person_add
-                      </span>
+                      <UserPlus className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
                     )}
                   </button>
                 </form>
@@ -367,9 +364,7 @@ export default function LoginPage() {
                       setView("signupSelection");
                     }}
                   >
-                    <span className="material-symbols-outlined text-sm">
-                      arrow_back
-                    </span>{" "}
+                    <ArrowLeft className="h-4 w-4" />{" "}
                     Change Method
                   </button>
                 </div>

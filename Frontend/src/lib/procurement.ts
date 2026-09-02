@@ -375,6 +375,7 @@ export type PurchaseOrderStatus =
   | "Sent"
   | "Vendor Accepted"
   | "Vendor Rejected"
+  | "Acknowledged"
   | "Closed"
   | "Cancelled";
 

@@ -99,10 +99,38 @@ class DocumentIntelligenceService:
                 "vendor_phone": None,
                 "blob_name": None,
                 "blob_url": None,
-                "line_items": []
+                "line_items": [],
+
+                # Document identification
+                "document_type": None,
+                "document_content": ""
             }
 
             fields = document.fields
+            # --------------------------------------------------
+            # Document Identification
+            # --------------------------------------------------
+
+            document_type = getattr(document, "doc_type", None)
+
+            invoice["document_type"] = (
+                str(document_type).strip().lower()
+                if document_type
+                else None
+            )
+
+            # Azure Document Intelligence provides the full
+            # extracted text through result.content
+            invoice["document_content"] = getattr(result, "content", "") or ""
+
+            logger.info(
+                f"Detected document type: {invoice['document_type']}"
+            )
+
+            logger.info(
+                f"Extracted document content length: "
+                f"{len(invoice['document_content'])}"
+            )
             logger.info(f"Available fields: {list(fields.keys())}")
             
             # Log all field values for debugging

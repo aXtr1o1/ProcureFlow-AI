@@ -31,21 +31,24 @@ export default function GoodsReceiptsPage() {
 
   return (
     <main className="p-6">
-      <div className="mb-6 flex justify-between">
+      <div className="mb-8 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">
+          <h1 className="text-3xl font-bold text-gray-900">
             Goods Receipts
           </h1>
 
-          <p className="text-sm text-gray-500">
+          <p className="mt-2 text-sm text-gray-500">
             Track received goods and services.
           </p>
         </div>
 
         <Link
           href="/dashboard/goods-receipts/create"
-          className="rounded-lg bg-blue-600 px-4 py-2 text-white"
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 hover:shadow-md"
         >
+          <span className="material-symbols-outlined text-[20px]">
+            add
+          </span>
           Create Receipt
         </Link>
       </div>
@@ -59,7 +62,7 @@ export default function GoodsReceiptsPage() {
       )}
 
       {!loading && !error && (
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
@@ -67,7 +70,7 @@ export default function GoodsReceiptsPage() {
                   Receipt Number
                 </th>
 
-                <th className="px-4 py-3 text-left">
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                   Type
                 </th>
 
@@ -85,12 +88,12 @@ export default function GoodsReceiptsPage() {
               {items.map((receipt) => (
                 <tr
                   key={receipt.id}
-                  className="border-t"
+                  className="border-t border-gray-100 transition-colors hover:bg-gray-50"
                 >
-                  <td className="px-4 py-3">
+                  <td className="px-5 py-4">
                     <Link
                       href={`/dashboard/goods-receipts/${receipt.id}`}
-                      className="font-medium text-blue-600"
+                      className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
                     >
                       {receipt.receipt_number}
                     </Link>

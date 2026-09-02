@@ -1,11 +1,23 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useState } from "react";
+import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { analyzeInvoice } from "@/services/api";
 
 export default function InvoiceUploadPage() {
   const router = useRouter();
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) {
+      return `${bytes} bytes`;
+    }
+
+    if (bytes < 1024 * 1024) {
+      return `${(bytes / 1024).toFixed(2)} KB`;
+    }
+
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  };
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -13,6 +25,9 @@ export default function InvoiceUploadPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // =====================================================
+  // File Selection
+  // =====================================================
   const handleFileSelect = (file: File | null) => {
     setError("");
     setSuccess("");
@@ -22,41 +37,95 @@ export default function InvoiceUploadPage() {
       return;
     }
 
-    if (file.type !== "application/pdf") {
+    // Check both MIME type and file extension
+    const isPdf =
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf");
+
+    if (!isPdf) {
       setSelectedFile(null);
-      setError("Only PDF invoice files are supported.");
+
+      setError(
+        "Invalid file type. Please select an Invoice PDF.",
+      );
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
       return;
     }
 
     setSelectedFile(file);
   };
 
-  const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+  // =====================================================
+  // File Input
+  // =====================================================
+  const handleInputChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0] ?? null;
     handleFileSelect(file);
   };
 
-  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+  // =====================================================
+  // Drag & Drop
+  // =====================================================
+  const handleDragOver = (
+    event: DragEvent<HTMLDivElement>,
+  ) => {
     event.preventDefault();
-    setIsDragging(true);
+
+    if (!uploading) {
+      setIsDragging(true);
+    }
   };
 
-  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = (
+    event: DragEvent<HTMLDivElement>,
+  ) => {
     event.preventDefault();
     setIsDragging(false);
   };
 
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+  const handleDrop = (
+    event: DragEvent<HTMLDivElement>,
+  ) => {
     event.preventDefault();
     setIsDragging(false);
+
+    if (uploading) {
+      return;
+    }
 
     const file = event.dataTransfer.files?.[0] ?? null;
     handleFileSelect(file);
   };
 
+  // =====================================================
+  // Remove Selected File
+  // =====================================================
+  const handleRemoveFile = () => {
+    if (uploading) {
+      return;
+    }
+
+    setSelectedFile(null);
+    setError("");
+    setSuccess("");
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // =====================================================
+  // Upload Invoice
+  // =====================================================
   const handleUpload = async () => {
     if (!selectedFile) {
-      setError("Please select an invoice PDF first.");
+      setError("Please select an Invoice PDF first.");
       return;
     }
 
@@ -68,7 +137,7 @@ export default function InvoiceUploadPage() {
       const result = await analyzeInvoice(selectedFile);
 
       // =====================================================
-      // Duplicate invoice
+      // Duplicate Invoice
       // =====================================================
       if (
         result?.duplicate === true ||
@@ -83,7 +152,7 @@ export default function InvoiceUploadPage() {
       }
 
       // =====================================================
-      // Successful invoice processing
+      // Successful Invoice Processing
       // =====================================================
       if (result?.success && result?.invoice_id) {
         setSuccess(
@@ -91,10 +160,10 @@ export default function InvoiceUploadPage() {
             "Invoice uploaded and validated successfully.",
         );
 
-        // Refresh invoice list when user returns to it
-        window.dispatchEvent(new Event("invoices:updated"));
+        window.dispatchEvent(
+          new Event("invoices:updated"),
+        );
 
-        // Small delay so user can see success state
         setTimeout(() => {
           router.push(
             `/dashboard/invoices/${result.invoice_id}`,
@@ -104,17 +173,72 @@ export default function InvoiceUploadPage() {
         return;
       }
 
+      // =====================================================
+      // Unexpected API Response
+      // =====================================================
       setError(
         result?.message ||
-          "Invoice upload completed, but no invoice ID was returned.",
+          "Invoice upload could not be completed. Please try again.",
       );
     } catch (err) {
-      console.error("Invoice upload error:", err);
+      // =====================================================
+      // Expected Validation Errors
+      // =====================================================
 
-      setError(
+      const errorMessage =
         err instanceof Error
           ? err.message
-          : "Invoice upload failed. Please try again.",
+          : "Invoice upload failed. Please try again.";
+
+      const normalizedMessage =
+        errorMessage.toLowerCase();
+
+      // Purchase Order uploaded
+      if (
+        normalizedMessage.includes("purchase order") ||
+        normalizedMessage.includes("only invoice pdfs")
+      ) {
+        setError(
+          "This document appears to be a Purchase Order. " +
+            "Please upload an Invoice. Purchase Orders must be " +
+            "created through the Purchase Order workflow.",
+        );
+
+        return;
+      }
+
+      // Generic invalid document
+      if (
+        normalizedMessage.includes("invalid document") ||
+        normalizedMessage.includes("not a valid invoice")
+      ) {
+        setError(
+          "This document is not recognized as a valid Invoice. " +
+            "Please upload a valid Invoice PDF.",
+        );
+
+        return;
+      }
+
+      // Duplicate invoice returned as an exception
+      if (
+        normalizedMessage.includes("duplicate invoice")
+      ) {
+        setError(errorMessage);
+        return;
+      }
+
+      // =====================================================
+      // Unexpected Technical Error
+      // =====================================================
+      console.error(
+        "Unexpected invoice upload error:",
+        err,
+      );
+
+      setError(
+        "Unable to process the invoice right now. " +
+          "Please try again.",
       );
     } finally {
       setUploading(false);
@@ -131,8 +255,10 @@ export default function InvoiceUploadPage() {
         <div className="mb-8">
           <button
             type="button"
-            onClick={() => router.push("/dashboard/invoices")}
-            className="mb-5 flex items-center gap-2 text-sm font-medium text-on-surface-variant hover:text-primary transition-colors"
+            onClick={() =>
+              router.push("/dashboard/invoices")
+            }
+            className="mb-5 flex items-center gap-2 text-sm font-medium text-on-surface-variant transition-colors hover:text-primary"
           >
             <span className="material-symbols-outlined text-[20px]">
               arrow_back
@@ -146,8 +272,8 @@ export default function InvoiceUploadPage() {
           </h1>
 
           <p className="mt-2 font-body-md text-body-md text-on-surface-variant">
-            Upload a PDF invoice to extract, validate and process
-            invoice information automatically.
+            Upload a PDF invoice to extract, validate and
+            process invoice information automatically.
           </p>
         </div>
 
@@ -166,16 +292,18 @@ export default function InvoiceUploadPage() {
                 : "border-outline-variant hover:border-primary/50"
             }`}
           >
-            {/* Hidden file input */}
+            {/* Hidden File Input */}
             <input
+              ref={fileInputRef}
               id="invoice-file"
               type="file"
               accept=".pdf,application/pdf"
               onChange={handleInputChange}
+              disabled={uploading}
               className="hidden"
             />
 
-            {/* Upload icon */}
+            {/* Upload Icon */}
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
               <span className="material-symbols-outlined text-[34px]">
                 cloud_upload
@@ -198,7 +326,11 @@ export default function InvoiceUploadPage() {
 
             <label
               htmlFor="invoice-file"
-              className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-6 py-3 font-title-md text-title-md text-on-primary shadow-sm transition-all hover:shadow-md"
+              className={`inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 font-title-md text-title-md text-on-primary shadow-sm transition-all hover:shadow-md ${
+                uploading
+                  ? "cursor-not-allowed opacity-50"
+                  : "cursor-pointer"
+              }`}
             >
               <span className="material-symbols-outlined text-[20px]">
                 folder_open
@@ -208,7 +340,7 @@ export default function InvoiceUploadPage() {
             </label>
 
             <p className="mt-5 text-xs text-on-surface-variant">
-              Supported format: PDF
+              Supported format: PDF Invoice only
             </p>
           </div>
 
@@ -232,18 +364,14 @@ export default function InvoiceUploadPage() {
                     </p>
 
                     <p className="mt-1 text-xs text-on-surface-variant">
-                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                      {formatFileSize(selectedFile.size)}
                     </p>
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedFile(null);
-                    setError("");
-                    setSuccess("");
-                  }}
+                  onClick={handleRemoveFile}
                   disabled={uploading}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest hover:text-error disabled:cursor-not-allowed disabled:opacity-50"
                   title="Remove file"
@@ -260,7 +388,10 @@ export default function InvoiceUploadPage() {
           {/* Error */}
           {/* ================================================= */}
           {error && (
-            <div className="mt-6 rounded-xl border border-red-300 bg-red-50 p-5 text-red-900">
+            <div
+              role="alert"
+              className="mt-6 rounded-xl border border-red-300 bg-red-50 p-5 text-red-900"
+            >
               <div className="flex items-start gap-3">
 
                 <span className="material-symbols-outlined mt-0.5 text-red-600">
@@ -284,7 +415,10 @@ export default function InvoiceUploadPage() {
           {/* Success */}
           {/* ================================================= */}
           {success && (
-            <div className="mt-6 rounded-xl border border-green-300 bg-green-50 p-5 text-green-900">
+            <div
+              role="status"
+              className="mt-6 rounded-xl border border-green-300 bg-green-50 p-5 text-green-900"
+            >
               <div className="flex items-start gap-3">
 
                 <span className="material-symbols-outlined mt-0.5 text-green-600">

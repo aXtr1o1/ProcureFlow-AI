@@ -6,7 +6,10 @@ import {
   useState,
 } from "react";
 
-import { useRouter } from "next/navigation";
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 
 import {
   createGoodsReceipt,
@@ -26,6 +29,7 @@ interface ReceiptLine {
 
 export default function CreateGoodsReceiptPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [purchaseOrderId, setPurchaseOrderId] =
     useState("");
@@ -58,60 +62,70 @@ export default function CreateGoodsReceiptPage() {
   const [error, setError] =
     useState("");
 
-  async function loadPurchaseOrder() {
-    if (!purchaseOrderId) {
-      setError(
-        "Enter a Purchase Order ID."
-      );
+    async function loadPurchaseOrder(
+      poNumber?: string
+    ) {
+      const numberToLoad =
+        poNumber || purchaseOrderId;
+
+      if (!numberToLoad) {
+        setError(
+          "Enter a Purchase Order Number."
+        );
+        return;
+      }
+
+      setLoadingPO(true);
+      setError("");
+      setPurchaseOrder(null);
+      setLineItems([]);
+
+      try {
+        const po =
+          await getPurchaseOrder(numberToLoad);
+
+        if (po.status !== "Acknowledged") {
+          throw new Error(
+            `Goods Receipt can only be created for an Acknowledged Purchase Order. Current status: ${po.status}`
+          );
+        }
+
+        setPurchaseOrder(po);
+
+        setLineItems(
+          (po.line_items ?? []).map((item) => ({
+            purchase_order_line_id: item.id,
+            description: item.description,
+            ordered_quantity: Number(item.quantity),
+            received_quantity: "0",
+            accepted_quantity: "0",
+            rejected_quantity: "0",
+            remarks: "",
+          }))
+        );
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load Purchase Order."
+        );
+      } finally {
+        setLoadingPO(false);
+      }
+    }
+
+  useEffect(() => {
+    const poNumber =
+      searchParams.get("purchaseOrderId");
+
+    if (!poNumber) {
       return;
     }
 
-    setLoadingPO(true);
-    setError("");
-    setPurchaseOrder(null);
-    setLineItems([]);
+    setPurchaseOrderId(poNumber);
 
-    try {
-      const po =
-      await getPurchaseOrder(
-        purchaseOrderId
-      );
-
-      setPurchaseOrder(po);
-
-      setLineItems(
-        (po.line_items ?? []).map((item) => ({
-          purchase_order_line_id:
-            item.id,
-
-          description:
-            item.description,
-
-          ordered_quantity:
-            Number(item.quantity),
-
-          received_quantity:
-            "0",
-
-          accepted_quantity:
-            "0",
-
-          rejected_quantity:
-            "0",
-
-          remarks: "",
-        }))
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load Purchase Order."
-      );
-    } finally {
-      setLoadingPO(false);
-    }
-  }
+    loadPurchaseOrder(poNumber);
+  }, [searchParams]);
 
   function updateLine(
     index: number,
@@ -322,7 +336,7 @@ export default function CreateGoodsReceiptPage() {
                 loadingPO ||
                 !purchaseOrderId
               }
-              onClick={loadPurchaseOrder}
+              onClick={() => loadPurchaseOrder(purchaseOrderId)}
               className="rounded-lg bg-blue-600 px-5 py-2 text-white disabled:opacity-50"
             >
               {loadingPO
@@ -461,139 +475,125 @@ export default function CreateGoodsReceiptPage() {
               Received Items
             </h2>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-3 text-left">
-                      Description
-                    </th>
+            <div className="w-full overflow-x-auto">
+              {/* Header */}
+              <div className="grid min-w-[900px] grid-cols-[2fr_1fr_1fr_1fr_1fr_2fr] items-center border-b bg-gray-50 px-3 py-3 text-sm font-semibold">
+                <div className="text-left">
+                  Description
+                </div>
 
-                    <th className="px-3 py-3 text-right">
-                      Ordered
-                    </th>
+                <div className="text-center">
+                  Ordered
+                </div>
 
-                    <th className="px-3 py-3 text-right">
-                      Received
-                    </th>
+                <div className="text-center">
+                  Received
+                </div>
 
-                    <th className="px-3 py-3 text-right">
-                      Accepted
-                    </th>
+                <div className="text-center">
+                  Accepted
+                </div>
 
-                    <th className="px-3 py-3 text-right">
-                      Rejected
-                    </th>
+                <div className="text-center">
+                  Rejected
+                </div>
 
-                    <th className="px-3 py-3 text-left">
-                      Remarks
-                    </th>
-                  </tr>
-                </thead>
+                <div className="text-left">
+                  Remarks
+                </div>
+              </div>
 
-                <tbody>
-                  {lineItems.map(
-                    (line, index) => (
-                      <tr
-                        key={
-                          line.purchase_order_line_id
-                        }
-                        className="border-t"
-                      >
-                        <td className="px-3 py-3">
-                          {line.description}
-                        </td>
+              {/* Rows */}
+              {lineItems.map((line, index) => (
+                <div
+                  key={line.purchase_order_line_id}
+                  className="grid min-w-[900px] grid-cols-[2fr_1fr_1fr_1fr_1fr_2fr] items-center border-b px-3 py-3 text-sm last:border-b-0"
+                >
+                  {/* Description */}
+                  <div className="text-left">
+                    {line.description}
+                  </div>
 
-                        <td className="px-3 py-3 text-right">
-                          {
-                            line.ordered_quantity
-                          }
-                        </td>
+                  {/* Ordered */}
+                  <div className="text-center">
+                    {line.ordered_quantity}
+                  </div>
 
-                        <td className="px-3 py-3">
-                          <input
-                            required
-                            type="number"
-                            min="0"
-                            max={
-                              line.ordered_quantity
-                            }
-                            step="0.01"
-                            value={
-                              line.received_quantity
-                            }
-                            onChange={(event) =>
-                              updateLine(
-                                index,
-                                "received_quantity",
-                                event.target.value
-                              )
-                            }
-                            className="w-24 rounded border px-2 py-1 text-right"
-                          />
-                        </td>
+                  {/* Received */}
+                  <div className="flex justify-center">
+                    <input
+                      required
+                      type="number"
+                      min="0"
+                      max={line.ordered_quantity}
+                      step="0.01"
+                      value={line.received_quantity}
+                      onChange={(event) =>
+                        updateLine(
+                          index,
+                          "received_quantity",
+                          event.target.value
+                        )
+                      }
+                      className="h-9 w-24 rounded-md border px-2 text-center"
+                    />
+                  </div>
 
-                        <td className="px-3 py-3">
-                          <input
-                            required
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={
-                              line.accepted_quantity
-                            }
-                            onChange={(event) =>
-                              updateLine(
-                                index,
-                                "accepted_quantity",
-                                event.target.value
-                              )
-                            }
-                            className="w-24 rounded border px-2 py-1 text-right"
-                          />
-                        </td>
+                  {/* Accepted */}
+                  <div className="flex justify-center">
+                    <input
+                      required
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.accepted_quantity}
+                      onChange={(event) =>
+                        updateLine(
+                          index,
+                          "accepted_quantity",
+                          event.target.value
+                        )
+                      }
+                      className="h-9 w-24 rounded-md border px-2 text-center"
+                    />
+                  </div>
 
-                        <td className="px-3 py-3">
-                          <input
-                            required
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={
-                              line.rejected_quantity
-                            }
-                            onChange={(event) =>
-                              updateLine(
-                                index,
-                                "rejected_quantity",
-                                event.target.value
-                              )
-                            }
-                            className="w-24 rounded border px-2 py-1 text-right"
-                          />
-                        </td>
+                  {/* Rejected */}
+                  <div className="flex justify-center">
+                    <input
+                      required
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.rejected_quantity}
+                      onChange={(event) =>
+                        updateLine(
+                          index,
+                          "rejected_quantity",
+                          event.target.value
+                        )
+                      }
+                      className="h-9 w-24 rounded-md border px-2 text-center"
+                    />
+                  </div>
 
-                        <td className="px-3 py-3">
-                          <input
-                            value={
-                              line.remarks
-                            }
-                            onChange={(event) =>
-                              updateLine(
-                                index,
-                                "remarks",
-                                event.target.value
-                              )
-                            }
-                            className="min-w-40 rounded border px-2 py-1"
-                            placeholder="Optional"
-                          />
-                        </td>
-                      </tr>
-                    )
-                  )}
-                </tbody>
-              </table>
+                  {/* Remarks */}
+                  <div className="pl-3">
+                    <input
+                      value={line.remarks}
+                      onChange={(event) =>
+                        updateLine(
+                          index,
+                          "remarks",
+                          event.target.value
+                        )
+                      }
+                      className="h-9 w-full rounded-md border px-3"
+                      placeholder="Optional"
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
         )}
