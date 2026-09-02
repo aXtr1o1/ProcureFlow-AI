@@ -41,14 +41,17 @@ class GoodsReceiptService:
         if purchase_order is None:
             raise ValueError("Purchase Order not found.")
 
+        ## ------------------------------------------------------
+        # A Goods Receipt can only be created after the vendor
+        # has accepted the Purchase Order.
+        #
+        # In the Purchase Order lifecycle, vendor acceptance
+        # changes the PO status to "Acknowledged".
         # ------------------------------------------------------
-        # A Goods Receipt can only be created after vendor
-        # acceptance.
-        # ------------------------------------------------------
-        if purchase_order.status != "Vendor Accepted":
+        if purchase_order.status != "Acknowledged":
             raise ValueError(
-                "Goods Receipt can only be created for a "
-                "Vendor Accepted Purchase Order."
+                "Goods Receipt can only be created for an "
+                "Acknowledged Purchase Order."
             )
 
         if not request.line_items:
@@ -342,6 +345,65 @@ class GoodsReceiptService:
             )
 
         receipt.status = new_status
+
+        # ------------------------------------------------------
+        # If the Goods Receipt is accepted, check whether the
+        # complete Purchase Order quantity has been received.
+        # Close the PO only when it is fully received.
+        # ------------------------------------------------------
+        if new_status == "Accepted":
+
+            purchase_order = (
+                self.db.query(ProcurementPurchaseOrder)
+                .filter(
+                    ProcurementPurchaseOrder.id
+                    == receipt.purchase_order_id
+                )
+                .first()
+            )
+
+            if purchase_order is not None:
+
+                po_lines = (
+                    self.db.query(ProcurementPurchaseOrderLine)
+                    .filter(
+                        ProcurementPurchaseOrderLine.purchase_order_id
+                        == purchase_order.id
+                    )
+                    .all()
+                )
+
+                fully_received = True
+
+                for po_line in po_lines:
+
+                    existing_received = (
+                        self.db.query(GoodsReceiptLine)
+                        .join(GoodsReceipt)
+                        .filter(
+                            GoodsReceipt.purchase_order_id
+                            == purchase_order.id,
+                            GoodsReceiptLine.purchase_order_line_id
+                            == po_line.id,
+                            GoodsReceipt.status != "Rejected",
+                        )
+                        .all()
+                    )
+
+                    total_received = sum(
+                        line.received_quantity
+                        for line in existing_received
+                    )
+
+                    if total_received < po_line.quantity:
+                        fully_received = False
+                        break
+
+                if (
+                    fully_received
+                    and purchase_order.status == "Acknowledged"
+                ):
+                    purchase_order.status = "Closed"
 
         if remarks:
             receipt.remarks = remarks

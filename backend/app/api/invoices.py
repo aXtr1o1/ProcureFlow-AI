@@ -463,10 +463,17 @@ async def analyze_invoice(
             file_bytes,
         )
 
-        if not ocr_result or not isinstance(ocr_result, dict):
+        # ========== DOCUMENT TYPE VALIDATION ==========
+        validation_service = ValidationService()
+
+        if not validation_service.is_invoice_document(ocr_result):
             raise HTTPException(
                 status_code=422,
-                detail="Failed to extract invoice data from PDF.",
+                detail=(
+                    "Invalid document. Only Invoice PDFs are accepted. "
+                    "Purchase Orders must be created through the "
+                    "Purchase Order workflow."
+                ),
             )
 
         required_fields = ["vendor_name", "invoice_date", "total_amount"]

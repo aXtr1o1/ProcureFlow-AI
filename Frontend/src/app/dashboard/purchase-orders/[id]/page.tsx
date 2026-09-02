@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 import {
   PurchaseOrder,
@@ -20,6 +20,7 @@ import LineItemsTable from "@/components/procurement/LineItemsTable";
 
 export default function PurchaseOrderDetailsPage() {
   const params = useParams();
+  const router = useRouter();
 
   /*
    * The URL contains the PO number.
@@ -423,6 +424,37 @@ export default function PurchaseOrderDetailsPage() {
             The vendor has accepted this Purchase
             Order. The next step is Goods Receipt.
           </p>
+        </div>
+      )}
+
+      {/* =====================================================
+          Acknowledged -> Create Goods Receipt
+      ====================================================== */}
+
+      {po.status === "Acknowledged" && (
+        <div className="mt-6 rounded-lg border bg-white p-6">
+          <h2 className="mb-2 text-lg font-semibold">
+            Goods Receipt
+          </h2>
+
+          <p className="mb-4 text-sm text-gray-500">
+            The Purchase Order has been acknowledged.
+            You can now create a Goods Receipt for the received items.
+          </p>
+
+          <button
+            type="button"
+            onClick={() =>
+              router.push(
+                `/dashboard/goods-receipts/create?purchaseOrderId=${encodeURIComponent(
+                  po.po_number
+                )}`
+              )
+            }
+            className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+          >
+            Create Goods Receipt
+          </button>
         </div>
       )}
 

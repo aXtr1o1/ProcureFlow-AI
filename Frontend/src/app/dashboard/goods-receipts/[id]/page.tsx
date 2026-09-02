@@ -6,6 +6,9 @@ import { useParams, useRouter } from "next/navigation";
 import {
   GoodsReceipt,
   getGoodsReceipt,
+  submitGoodsReceipt,
+  acceptGoodsReceipt,
+  rejectGoodsReceipt,
 } from "@/lib/procurement";
 
 import StatusBadge from "@/components/procurement/StatusBadge";
@@ -26,6 +29,9 @@ export default function GoodsReceiptDetailsPage() {
   const [error, setError] =
     useState("");
 
+  const [remarks, setRemarks] = 
+    useState("");
+
   useEffect(() => {
     if (!id || Number.isNaN(id)) {
       setError("Invalid Goods Receipt ID.");
@@ -40,6 +46,77 @@ export default function GoodsReceiptDetailsPage() {
       )
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleSubmit = async () => {
+    if (!receipt) return;
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const updatedReceipt = await submitGoodsReceipt(receipt.id);
+
+      setReceipt(updatedReceipt);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to submit Goods Receipt."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAccept = async () => {
+    if (!receipt) return;
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const updatedReceipt =
+        await acceptGoodsReceipt(
+          receipt.id,
+          remarks.trim() || undefined
+        );
+
+      setReceipt(updatedReceipt);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to accept Goods Receipt."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!receipt) return;
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const updatedReceipt =
+        await rejectGoodsReceipt(
+          receipt.id,
+          remarks.trim() || undefined
+        );
+
+      setReceipt(updatedReceipt);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to reject Goods Receipt."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -62,6 +139,9 @@ export default function GoodsReceiptDetailsPage() {
       </main>
     );
   }
+
+  const isDraft =
+    receipt.status?.toLowerCase() === "draft";
 
   const isAccepted =
     receipt.status?.toLowerCase() === "accepted";
@@ -96,6 +176,32 @@ export default function GoodsReceiptDetailsPage() {
           status={receipt.status}
         />
       </div>
+
+      {/* ===================================================== */}
+      {/* DRAFT - SUBMIT GOODS RECEIPT */}
+      {/* ===================================================== */}
+
+      {isDraft && (
+        <section className="mb-6 rounded-xl border bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-[#06264b]">
+            Goods Receipt Actions
+          </h2>
+
+          <p className="mb-4 text-sm text-gray-600">
+            This Goods Receipt is currently in Draft status.
+            Submit it for approval after verifying the received quantities.
+          </p>
+
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading}
+            className="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading ? "Submitting..." : "Submit Goods Receipt"}
+          </button>
+        </section>
+      )}
 
       {/* ===================================================== */}
       {/* ACCEPTED SUCCESS SCREEN */}
@@ -402,6 +508,8 @@ export default function GoodsReceiptDetailsPage() {
           </label>
 
           <textarea
+            value={remarks}
+            onChange={(event) => setRemarks(event.target.value)}
             className="w-full rounded-lg border border-gray-300 p-3 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             rows={4}
             placeholder="Approval / rejection remarks"
@@ -410,16 +518,20 @@ export default function GoodsReceiptDetailsPage() {
           <div className="mt-4 flex gap-3">
             <button
               type="button"
-              className="rounded-lg bg-green-600 px-5 py-2.5 font-semibold text-white hover:bg-green-700"
+              onClick={handleAccept}
+              disabled={loading}
+              className="rounded-lg bg-green-600 px-5 py-2.5 font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Accept
+              {loading ? "Accepting..." : "Accept"}
             </button>
 
             <button
               type="button"
-              className="rounded-lg bg-red-600 px-5 py-2.5 font-semibold text-white hover:bg-red-700"
+              onClick={handleReject}
+              disabled={loading}
+              className="rounded-lg bg-red-600 px-5 py-2.5 font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Reject
+              {loading ? "Rejecting..." : "Reject"}
             </button>
           </div>
         </div>
