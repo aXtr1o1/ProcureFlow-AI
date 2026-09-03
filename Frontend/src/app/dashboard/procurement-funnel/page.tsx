@@ -115,13 +115,13 @@ export default function ProcurementFunnelPage() {
     {
       number: 6,
       name: "Payments",
-      route: "/dashboard/payments",
+      route: "/dashboard/payment-center",
       data: funnel?.payments,
     },
   ];
 
   return (
-    <main className="min-h-screen bg-surface pt-24 pb-12">
+    <main className="min-h-screen bg-surface pt-6 pb-12">
       <div className="max-w-container-max mx-auto px-margin-desktop">
 
         <div className="mb-8">

@@ -374,28 +374,28 @@ export async function getApprovalDetails(id: number | string) {
 }
 
 export async function approveInvoice(
-    id: number | string,
-    approved_by: string,
-    invoiceEdits?: {
-        invoice_number?: string;
-        vendor_name?: string;
-        vendor_address?: string;
-        customer_name?: string;
-        invoice_date?: string;
-        due_date?: string;
-        purchase_order_number?: string;
-        currency?: string;
-        subtotal?: number;
-        tax?: number;
-        total_amount?: number;
-        line_items?: Array<{
-            id: number;
-            description?: string;
-            quantity?: number;
-            unit_price?: number;
-            amount?: number;
-        }>;
-    }
+  id: number | string,
+  approved_by: string,
+  invoiceEdits: {
+    invoice_number?: string;
+    vendor_name?: string;
+    vendor_address?: string;
+    customer_name?: string;
+    invoice_date?: string;
+    due_date?: string;
+    purchase_order_number?: string;
+    currency?: string;
+    subtotal?: number;
+    tax?: number;
+    total_amount?: number;
+    line_items?: Array<{
+      id: number;
+      description?: string;
+      quantity?: number;
+      unit_price?: number;
+      amount?: number;
+    }>;
+  } | null = null
 ) {
     const token = localStorage.getItem("access_token");
 
@@ -631,6 +631,66 @@ export async function matchInvoice(
   }
 
   return data;
+}
+
+// ==========================================================
+// Get Purchase Orders
+// ==========================================================
+
+export interface PurchaseOrder {
+  id: number;
+  po_number: string;
+  vendor_name: string;
+  currency: string;
+  subtotal: number;
+  tax: number;
+  total_amount: number;
+  status: string;
+}
+
+export async function getPurchaseOrders(): Promise<PurchaseOrder[]> {
+  const response = await fetch(
+    `${API_URL}/purchase-orders/`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
+    }
+  );
+
+  const data = await response.json();
+
+  console.log("Purchase Orders Response:", response.status);
+  console.log("Purchase Orders Data:", data);
+
+  if (response.status === 401) {
+    localStorage.removeItem("access_token");
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (!response.ok) {
+    const detail = data?.detail;
+
+    const message = Array.isArray(detail)
+      ? detail
+          .map(
+            (item: { msg?: string }) =>
+              item.msg || String(item)
+          )
+          .join(", ")
+      : detail || "Failed to fetch Purchase Orders.";
+
+    throw new Error(message);
+  }
+
+  // Support either direct array or wrapped response
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return Array.isArray(data?.data)
+    ? data.data
+    : [];
 }
 
 // ==========================================================

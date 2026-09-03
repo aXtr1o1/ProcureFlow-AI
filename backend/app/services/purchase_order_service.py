@@ -12,6 +12,9 @@ from app.database.models import (
 )
 
 from app.services.audit_service import AuditService
+from app.services.currency_service import (
+    convert_invoice_amounts_to_usd,
+)
 
 
 class PurchaseOrderService:
@@ -478,14 +481,50 @@ class PurchaseOrderService:
             f"PO-{uuid.uuid4().hex[:8].upper()}"
         )
 
+        # ==========================================================
+        # Convert Purchase Requisition amounts to USD
+        # ==========================================================
+
+        original_currency = (
+            purchase_requisition.currency or "USD"
+        ).strip().upper()
+
+        conversion_data = {
+            "currency": original_currency,
+            "subtotal": purchase_requisition.negotiated_amount or 0,
+            "tax": 0,
+            "total_amount": purchase_requisition.negotiated_amount or 0,
+            "line_items": [
+                {
+                    "description": item.description,
+                    "quantity": item.quantity or 0,
+                    "unit_price": item.unit_price or 0,
+                    "amount": item.amount or 0,
+                }
+                for item in purchase_requisition.line_items
+            ],
+        }
+
+        converted_data = convert_invoice_amounts_to_usd(
+            conversion_data
+        )
+
+        # ==========================================================
+        # Create Purchase Order in USD
+        # ==========================================================
+
         purchase_order = ProcurementPurchaseOrder(
             po_number=po_number,
             purchase_requisition_id=purchase_requisition.id,
             vendor_name=purchase_requisition.selected_vendor_name,
-            currency=purchase_requisition.currency,
-            subtotal=purchase_requisition.negotiated_amount,
-            tax=0,
-            total_amount=purchase_requisition.negotiated_amount,
+
+            # PO is normalized to USD
+            currency="USD",
+
+            subtotal=converted_data["subtotal"],
+            tax=converted_data["tax"],
+            total_amount=converted_data["total_amount"],
+
             status="Created",
             created_by_id=user_id,
         )
@@ -493,14 +532,14 @@ class PurchaseOrderService:
         self.db.add(purchase_order)
         self.db.flush()
 
-        for item in purchase_requisition.line_items:
+        for item in converted_data["line_items"]:
 
             purchase_order_line = ProcurementPurchaseOrderLine(
                 purchase_order_id=purchase_order.id,
-                description=item.description,
-                quantity=item.quantity,
-                unit_price=item.unit_price,
-                amount=item.amount,
+                description=item.get("description"),
+                quantity=item.get("quantity", 0),
+                unit_price=item.get("unit_price", 0),
+                amount=item.get("amount", 0),
             )
 
             self.db.add(purchase_order_line)

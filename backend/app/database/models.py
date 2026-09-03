@@ -452,6 +452,10 @@ class PurchaseRequisition(Base):
         String(255), 
         nullable=True
     )
+    category = Column(
+        String(255),
+        nullable=True
+    )
     project = Column(
         String(255), 
         nullable=True

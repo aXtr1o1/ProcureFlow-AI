@@ -289,7 +289,7 @@ export default function CreateGoodsReceiptPage() {
   }
 
   return (
-    <main className="p-6">
+    <main className="min-h-screen bg-surface px-6 pb-12 pt-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">
           Create Goods Receipt

@@ -262,7 +262,7 @@ export default function InvoicePaymentPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-surface pt-24 pb-12">
+      <main className="min-h-screen bg-surface pt-6 pb-12">
         <div className="max-w-container-max mx-auto px-margin-desktop">
           <div className="flex justify-center py-20">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
@@ -274,7 +274,7 @@ export default function InvoicePaymentPage() {
 
   if (error && !invoice) {
     return (
-      <main className="min-h-screen bg-surface pt-24 pb-12">
+      <main className="min-h-screen bg-surface pt-6 pb-12">
         <div className="max-w-container-max mx-auto px-margin-desktop">
           <div className="rounded-xl border border-red-300 bg-red-50 p-6 text-red-900">
             {error}
@@ -292,32 +292,27 @@ export default function InvoicePaymentPage() {
     invoice.processing_status === "Payment Pending";
 
   return (
-    <main className="min-h-screen bg-surface pt-24 pb-12">
+    <main className="min-h-screen bg-surface pt-6 pb-12">
       <div className="max-w-container-max mx-auto px-margin-desktop">
 
-        {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <button
             type="button"
             onClick={() =>
-              router.push(
-                `/dashboard/invoices/${invoice.id}`
-              )
+              router.push(`/dashboard/invoices/${invoice.id}`)
             }
             className="text-sm text-primary hover:underline"
           >
             ← Back to Invoice
           </button>
 
-          <h1 className="mt-4 text-3xl font-bold text-on-surface">
+          <h1 className="mt-3 text-3xl font-bold text-on-surface">
             Invoice Payment
           </h1>
 
           <p className="mt-2 text-on-surface-variant">
             Manage payment for invoice{" "}
-            <strong>
-              {invoice.invoice_number}
-            </strong>
+            <strong>{invoice.invoice_number}</strong>
           </p>
         </div>
 

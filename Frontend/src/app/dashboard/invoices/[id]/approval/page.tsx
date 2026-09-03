@@ -105,11 +105,12 @@ export default function InvoiceApprovalPage() {
     invoice.processing_status,
   );
   const canApprove = [
-    "Pending Approval",
-    "Approval Requested",
-    "Matched",
-    "Match Passed",
-  ].includes(invoice.processing_status);
+  "Approval Pending",
+  "Pending Approval",
+  "Approval Requested",
+  "Matched",
+  "Match Passed",
+].includes(invoice.processing_status);
 
   const updateHeader = <K extends keyof Invoice>(key: K, value: Invoice[K]) => {
     setInvoice((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -150,6 +151,12 @@ export default function InvoiceApprovalPage() {
     });
   };
 
+  const hasInvoiceEdits = () => {
+    if (!invoice) return false;
+
+    return false;
+  };
+
   const buildEditsPayload = () => ({
     invoice_number: invoice.invoice_number ?? "",
     vendor_name: invoice.vendor_name ?? "",
@@ -180,28 +187,31 @@ export default function InvoiceApprovalPage() {
   };
 
   const handleDecision = async (decision: "approved" | "rejected") => {
-    if (deciding) return;
+  if (deciding) return;
 
-    if (decision === "rejected") {
-      setShowRejectDialog(true);
-      return;
-    }
+  if (decision === "rejected") {
+    setShowRejectDialog(true);
+    return;
+  }
 
-    setDeciding("approved");
-    setError(null);
+  setDeciding("approved");
+  setError(null);
 
-    try {
-      await approveInvoice(invoice.id, "Manager", buildEditsPayload());
-      router.replace("/dashboard/invoices");
-    } catch (err) {
-      console.error(err);
-      setError(
-        err instanceof Error ? err.message : "Failed to approve invoice.",
-      );
-    } finally {
-      setDeciding(null);
-    }
-  };
+  try {
+    await approveInvoice(invoice.id, "Manager", null);
+    router.replace("/dashboard/invoices");
+  } catch (err) {
+    console.error(err);
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Failed to approve invoice.",
+    );
+  } finally {
+    setDeciding(null);
+  }
+};
 
   const confirmReject = async () => {
     if (!rejectComment.trim()) {

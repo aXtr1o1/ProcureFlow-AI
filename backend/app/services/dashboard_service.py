@@ -1098,18 +1098,60 @@ class DashboardService:
                 ProcurementPurchaseOrder.purchase_requisition_id
                 == PurchaseRequisition.id,
             )
-            .filter(
-                column.isnot(None)
-            )
             .group_by(column)
             .all()
         )
 
-        return {
-            str(key): float(value or 0)
-            for key, value in rows
-            if key
-        }
+        result = {}
+
+        for key, value in rows:
+            category_name = str(key).strip() if key else "Uncategorized"
+
+            result[category_name] = (
+                result.get(category_name, 0)
+                + float(value or 0)
+            )
+
+        return result
+
+    def _group_spend_by_month(self) -> dict[str, float]:
+        from collections import defaultdict
+
+        rows = self.db.query(
+            ProcurementPurchaseOrder.created_at,
+            ProcurementPurchaseOrder.total_amount
+        ).filter(
+            ProcurementPurchaseOrder.created_at.isnot(None)
+        ).all()
+
+        totals = defaultdict(float)
+
+        for created_at, amount in rows:
+            if created_at:
+                month_key = created_at.strftime("%Y-%m")
+                totals[month_key] += float(amount or 0)
+
+        return dict(sorted(totals.items()))
+
+    def _group_spend_by_quarter(self) -> dict[str, float]:
+        from collections import defaultdict
+
+        rows = self.db.query(
+            ProcurementPurchaseOrder.created_at,
+            ProcurementPurchaseOrder.total_amount
+        ).filter(
+            ProcurementPurchaseOrder.created_at.isnot(None)
+        ).all()
+
+        totals = defaultdict(float)
+
+        for created_at, amount in rows:
+            if created_at:
+                quarter = ((created_at.month - 1) // 3) + 1
+                quarter_key = f"{created_at.year} Q{quarter}"
+                totals[quarter_key] += float(amount or 0)
+
+        return dict(sorted(totals.items()))
 
     # ==========================================================
     # Spend Analytics
@@ -1188,7 +1230,9 @@ class DashboardService:
                 PurchaseRequisition.business_unit
             ),
 
-            "by_category": {},
+            "by_category": self._group_spend_by(
+                PurchaseRequisition.category
+            ),
 
             "by_vendor": self._group_spend_by(
                 ProcurementPurchaseOrder.vendor_name
@@ -1198,9 +1242,9 @@ class DashboardService:
                 PurchaseRequisition.location
             ),
 
-            "by_month": {},
+            "by_month": self._group_spend_by_month(),
 
-            "by_quarter": {},
+            "by_quarter": self._group_spend_by_quarter(),
 
             "by_project": self._group_spend_by(
                 PurchaseRequisition.project

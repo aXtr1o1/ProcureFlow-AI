@@ -165,9 +165,88 @@ class InvoiceService:
                 detail="Purchase Order not found."
             )
 
+        # ----------------------------------------------------------
+        # Validate Purchase Order against Invoice
+        # ----------------------------------------------------------
+
+        invoice_vendor = (
+            invoice.vendor_name or ""
+        ).replace("\n", " ").strip().lower()
+
+        po_vendor = (
+            purchase_order.vendor_name or ""
+        ).replace("\n", " ").strip().lower()
+
+        mismatch_reasons = []
+
+        if invoice_vendor != po_vendor:
+            mismatch_reasons.append(
+                f"Vendor mismatch: Invoice vendor '{invoice.vendor_name}' "
+                f"does not match PO vendor '{purchase_order.vendor_name}'."
+            )
+
+        # ----------------------------------------------------------
+        # Link the validated Purchase Order
+        # ----------------------------------------------------------
+
         invoice.procurement_purchase_order_id = purchase_order.id
         invoice.purchase_order_number = purchase_order.po_number
-        invoice.processing_status = "PO Linked"
+
+        # ----------------------------------------------------------
+        # Check invoice and PO mismatch
+        # ----------------------------------------------------------
+
+        mismatch_reasons = []
+
+        # Vendor mismatch
+        if invoice_vendor != po_vendor:
+            mismatch_reasons.append(
+                f"Vendor mismatch: Invoice vendor '{invoice.vendor_name}' "
+                f"does not match PO vendor '{purchase_order.vendor_name}'."
+            )
+
+        # Amount mismatch
+        invoice_total = float(invoice.total_amount or 0)
+        po_total = float(purchase_order.total_amount or 0)
+
+        if invoice_total != po_total:
+            mismatch_reasons.append(
+                f"Amount mismatch: Invoice total is {invoice_total}, "
+                f"but PO total is {po_total}."
+            )
+
+        if mismatch_reasons:
+            invoice.processing_status = "Review Required"
+
+            remarks = (
+                "Invoice mismatch detected. Manual review is required. "
+                + " ".join(mismatch_reasons)
+            )
+
+            self.db.add(
+                InvoiceStatusLog(
+                    invoice_id=invoice.id,
+                    status="Review Required",
+                    remarks=remarks,
+                    updated_by="System",
+                )
+            )
+        else:
+            invoice.processing_status = "Matched"
+
+            self.db.add(
+                InvoiceStatusLog(
+                    invoice_id=invoice.id,
+                    status="Matched",
+                    remarks="Invoice matched successfully with the Purchase Order.",
+                    updated_by="System",
+                )
+            )
+
+        self.db.commit()
+        self.db.refresh(invoice)
+
+        return invoice
 
         self.db.add(InvoiceStatusLog(
             invoice_id=invoice.id,
@@ -175,6 +254,31 @@ class InvoiceService:
             remarks=f"Invoice linked to Purchase Order {purchase_order.po_number}.",
             updated_by="System",
         ))
+
+        self.db.commit()
+        self.db.refresh(invoice)
+
+        return invoice
+
+    def mark_review_required(
+        self,
+        invoice: Invoice,
+        remarks: str,
+    ):
+        """
+        Move an invoice to Review Required when a mismatch is detected.
+        """
+
+        invoice.processing_status = "Review Required"
+
+        self.db.add(
+            InvoiceStatusLog(
+                invoice_id=invoice.id,
+                status="Review Required",
+                remarks=remarks,
+                updated_by="System",
+            )
+        )
 
         self.db.commit()
         self.db.refresh(invoice)
@@ -190,10 +294,19 @@ class InvoiceService:
                 status_code=409,
                 detail="Link the invoice to a Purchase Order before approval.",
             )
-        if invoice.processing_status not in {"Matched", "Match Override Approved"}:
+        if invoice.processing_status == "Approval Pending":
+            return invoice
+
+        if invoice.processing_status not in {
+            "Matched",
+            "Match Override Approved",
+        }:
             raise HTTPException(
                 status_code=409,
-                detail="Only matched invoices or authorized match overrides can be sent for approval.",
+                detail=(
+                    "Only matched invoices or authorized match "
+                    "overrides can be sent for approval."
+                ),
             )
 
         invoice.processing_status = "Approval Pending"
