@@ -1,5 +1,6 @@
-from typing import List, Optional
-from pydantic import BaseModel
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class MatchingMismatch(BaseModel):
@@ -9,7 +10,6 @@ class MatchingMismatch(BaseModel):
 
 
 class MatchingResponse(BaseModel):
-
     success: bool
 
     invoice_id: int
@@ -20,7 +20,19 @@ class MatchingResponse(BaseModel):
 
     match_score: float
 
-    mismatches: List[MatchingMismatch]
+    matched_details: List[dict[str, Any]] = Field(
+        default_factory=list
+    )
+
+    amount_excluding_tax: Optional[dict[str, Any]] = None
+
+    amount_including_tax: Optional[dict[str, Any]] = None
+
+    tax: Optional[dict[str, Any]] = None
+
+    mismatches: List[MatchingMismatch] = Field(
+        default_factory=list
+    )
 
     status: str
 

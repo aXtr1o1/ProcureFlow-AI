@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -106,6 +107,20 @@ const TERMINAL_UPLOAD_STATUSES = new Set([
   "Failed",
 ]);
 
+const INVOICE_PROCESSING_STORAGE_KEY =
+  "invoice-processing-state";
+
+type StoredInvoiceProcessingState = {
+  fileName: string | null;
+  stepStates: StepState[];
+  currentStatus: string;
+  currentStatusRaw: string;
+  currentStepIndex: number;
+  completed: boolean;
+  newInvoiceId: string | null;
+  notice: Notice;
+};
+
 type InvoiceProcessingContextType = {
   fileName: string | null;
   stepStates: StepState[];
@@ -181,6 +196,41 @@ export function InvoiceProcessingProvider({ children }: { children: ReactNode })
   const [notice, setNotice] = useState<Notice>(null);
   const runningRef = useRef(false);
 
+  useEffect(() => {
+    try {
+      const savedState = localStorage.getItem(
+        INVOICE_PROCESSING_STORAGE_KEY
+      );
+
+      if (!savedState) return;
+
+      const parsedState: StoredInvoiceProcessingState =
+        JSON.parse(savedState);
+
+      setFileName(parsedState.fileName ?? null);
+      setStepStates(
+        parsedState.stepStates ?? STEPS.map(() => "pending")
+      );
+      setCurrentStatus(
+        parsedState.currentStatus ?? "Waiting for file"
+      );
+      setCurrentStatusRaw(parsedState.currentStatusRaw ?? "");
+      setCurrentStepIndex(parsedState.currentStepIndex ?? -1);
+      setCompleted(parsedState.completed ?? false);
+      setNewInvoiceId(parsedState.newInvoiceId ?? null);
+      setNotice(parsedState.notice ?? null);
+    } catch (error) {
+      console.error(
+        "Failed to restore invoice processing state:",
+        error
+      );
+
+      localStorage.removeItem(
+        INVOICE_PROCESSING_STORAGE_KEY
+      );
+    }
+  }, []);
+
   const applyStatus = useCallback((status: string) => {
     const ui = computeStepUi(status);
     setCurrentStatus(ui.currentStatus);
@@ -190,6 +240,33 @@ export function InvoiceProcessingProvider({ children }: { children: ReactNode })
   }, []);
 
   const clearNotice = useCallback(() => setNotice(null), []);
+
+  useEffect(() => {
+    const stateToSave: StoredInvoiceProcessingState = {
+      fileName,
+      stepStates,
+      currentStatus,
+      currentStatusRaw,
+      currentStepIndex,
+      completed,
+      newInvoiceId,
+      notice,
+    };
+
+    localStorage.setItem(
+      INVOICE_PROCESSING_STORAGE_KEY,
+      JSON.stringify(stateToSave)
+    );
+  }, [
+    fileName,
+    stepStates,
+    currentStatus,
+    currentStatusRaw,
+    currentStepIndex,
+    completed,
+    newInvoiceId,
+    notice,
+  ]);
 
   const startProcessing = useCallback(
     async (file: File) => {

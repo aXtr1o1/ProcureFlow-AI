@@ -12,6 +12,7 @@ from app.database.models import (
     ProcurementPurchaseOrderLine,
     InvoiceLineItem,
 )
+from app.services.currency_service import convert_invoice_amounts_to_usd
 
 
 class MatchingService:
@@ -38,6 +39,42 @@ class MatchingService:
 
     def __init__(self, db: Session):
         self.db = db
+
+    # ==========================================================
+    # Flexible Line Description Matching
+    # ==========================================================
+
+    @staticmethod
+    def descriptions_match(
+        description_1: str | None,
+        description_2: str | None,
+    ) -> bool:
+        first = " ".join(
+            (description_1 or "").strip().lower().split()
+        )
+
+        second = " ".join(
+            (description_2 or "").strip().lower().split()
+        )
+
+        if not first or not second:
+            return False
+
+        # Exact match
+        if first == second:
+            return True
+
+        # One description contains the other
+        if first in second or second in first:
+            return True
+
+        # Match using common meaningful words
+        first_words = set(first.split())
+        second_words = set(second.split())
+
+        common_words = first_words.intersection(second_words)
+
+        return len(common_words) >= 2
 
     # ==========================================================
     # Match Invoice with Procurement Purchase Order
@@ -140,72 +177,121 @@ class MatchingService:
 
         # ------------------------------------------------------
         # Currency
+        #
+        # Invoice amounts are already stored in USD during upload.
+        # Convert the PO monetary values to USD before matching.
         # ------------------------------------------------------
-
-        invoice_currency = (
-            invoice.currency or ""
-        ).strip().upper()
 
         po_currency = (
-            purchase_order.currency or ""
+            purchase_order.currency or "USD"
         ).strip().upper()
 
-        if invoice_currency != po_currency:
-            mismatches.append(
-                (
-                    "Currency",
-                    purchase_order.currency,
-                    invoice.currency,
-                )
-            )
+        po_usd_data = convert_invoice_amounts_to_usd(
+            {
+                "currency": po_currency,
+                "subtotal": purchase_order.subtotal or 0,
+                "tax": purchase_order.tax or 0,
+                "total_amount": purchase_order.total_amount or 0,
+                "line_items": [],
+            }
+        )
 
-        # ------------------------------------------------------
-        # Subtotal
-        # ------------------------------------------------------
-
-        if round(invoice.subtotal or 0, 2) != round(
+        po_subtotal_usd = po_usd_data.get(
+            "subtotal",
             purchase_order.subtotal or 0,
-            2,
-        ):
-            mismatches.append(
-                (
-                    "Subtotal",
-                    purchase_order.subtotal,
-                    invoice.subtotal,
-                )
-            )
+        )
 
-        # ------------------------------------------------------
-        # Tax
-        # ------------------------------------------------------
-
-        if round(invoice.tax or 0, 2) != round(
+        po_tax_usd = po_usd_data.get(
+            "tax",
             purchase_order.tax or 0,
-            2,
-        ):
-            mismatches.append(
-                (
-                    "Tax",
-                    purchase_order.tax,
-                    invoice.tax,
-                )
-            )
+        )
 
-        # ------------------------------------------------------
-        # Total Amount
-        # ------------------------------------------------------
-
-        if round(invoice.total_amount or 0, 2) != round(
+        po_total_usd = po_usd_data.get(
+            "total_amount",
             purchase_order.total_amount or 0,
+        )
+
+        # ------------------------------------------------------
+        # Amount Excluding Tax
+        #
+        # Tax is excluded from the actual 2-way match.
+        # The invoice total includes vendor-applied tax, so
+        # calculate the invoice amount excluding tax.
+        # ------------------------------------------------------
+
+        invoice_amount_excluding_tax = round(
+            (invoice.total_amount or 0) - (invoice.tax or 0),
             2,
-        ):
+        )
+
+        amount_difference = abs(
+            round(invoice_amount_excluding_tax or 0, 2)
+            - round(po_total_usd or 0, 2)
+        )
+
+        if amount_difference > 0.05:
             mismatches.append(
                 (
-                    "Total Amount",
-                    purchase_order.total_amount,
-                    invoice.total_amount,
+                    "Amount Excluding Tax",
+                    po_total_usd,
+                    invoice_amount_excluding_tax,
                 )
             )
+
+        # ------------------------------------------------------
+        # Amount Including Tax
+        #
+        # This value is displayed for information only.
+        # Vendor-applied tax must not cause a match failure.
+        # ------------------------------------------------------
+
+        invoice_amount_including_tax = round(
+            invoice.total_amount or 0,
+            2,
+        )
+
+        po_amount_including_tax = round(
+            po_total_usd or 0,
+            2,
+        )
+
+        matched_details = [
+            {
+                "field_name": "Vendor",
+                "po_value": purchase_order.vendor_name,
+                "invoice_value": invoice.vendor_name,
+            },
+            {
+                "field_name": "Currency",
+                "po_value": "USD",
+                "invoice_value": "USD",
+            },
+            {
+                "field_name": "Amount Excluding Tax",
+                "po_value": round(po_total_usd or 0, 2),
+                "invoice_value": round(
+                    invoice_amount_excluding_tax or 0,
+                    2,
+                ),
+            },
+            {
+                "field_name": "Amount Including Tax",
+                "po_value": round(
+                    po_amount_including_tax or 0,
+                    2,
+                ),
+                "invoice_value": round(
+                    invoice_amount_including_tax or 0,
+                    2,
+                ),
+            },
+            {
+                "field_name": "Tax",
+                "po_value": round(po_tax_usd or 0, 2),
+                "invoice_value": round(invoice.tax or 0, 2),
+                "excluded_from_matching": True,
+            },
+        ]
 
         # ======================================================
         # Line-Level Matching
@@ -247,19 +333,24 @@ class MatchingService:
         invoice_line_map = {}
 
         for line in invoice_lines:
-            key = (
-                line.description or ""
-            ).strip().lower()
+            key = " ".join(
+                (line.description or "").strip().lower().split()
+            )
 
             invoice_line_map[key] = line
 
         for po_line in po_lines:
-
-            key = (
-                po_line.description or ""
-            ).strip().lower()
-
-            invoice_line = invoice_line_map.get(key)
+            invoice_line = next(
+                (
+                    line
+                    for line in invoice_lines
+                    if self.descriptions_match(
+                        po_line.description,
+                        line.description,
+                    )
+                ),
+                None,
+            )
 
             if invoice_line is None:
                 mismatches.append(
@@ -287,37 +378,97 @@ class MatchingService:
                     )
                 )
 
-            # Unit Price
-            if round(
+            # Unit Price - compare in USD
+
+            po_line_usd = convert_invoice_amounts_to_usd(
+                {
+                    "currency": po_currency,
+                    "subtotal": 0,
+                    "tax": 0,
+                    "total_amount": 0,
+                    "line_items": [
+                        {
+                            "description": po_line.description,
+                            "quantity": po_line.quantity or 0,
+                            "unit_price": po_line.unit_price or 0,
+                            "amount": po_line.amount or 0,
+                        }
+                    ],
+                }
+            )
+
+            converted_line = (
+                po_line_usd.get("line_items", [{}])[0]
+            )
+
+            po_unit_price_usd = converted_line.get(
+                "unit_price",
                 po_line.unit_price or 0,
-                2,
-            ) != round(
-                invoice_line.unit_price or 0,
-                2,
-            ):
+            )
+
+            po_amount_usd = converted_line.get(
+                "amount",
+                po_line.amount or 0,
+            )
+
+            unit_price_difference = abs(
+                round(po_unit_price_usd or 0, 2)
+                - round(invoice_line.unit_price or 0, 2)
+            )
+
+            if unit_price_difference > 0.05:
                 mismatches.append(
                     (
                         f"Unit Price: {po_line.description}",
-                        po_line.unit_price,
+                        po_unit_price_usd,
                         invoice_line.unit_price,
                     )
                 )
 
-            # Amount
-            if round(
-                po_line.amount or 0,
-                2,
-            ) != round(
-                invoice_line.amount or 0,
-                2,
-            ):
+            # Amount - compare in USD
+            line_amount_difference = abs(
+                round(po_amount_usd or 0, 2)
+                - round(invoice_line.amount or 0, 2)
+            )
+
+            if line_amount_difference > 0.05:
                 mismatches.append(
                     (
                         f"Amount: {po_line.description}",
-                        po_line.amount,
+                        po_amount_usd,
                         invoice_line.amount,
                     )
                 )
+
+            matched_details.append(
+                {
+                    "field_name": (
+                        f"Line Item: {po_line.description}"
+                    ),
+                    "po_value": {
+                        "quantity": po_line.quantity,
+                        "unit_price": round(
+                            po_unit_price_usd or 0,
+                            2,
+                        ),
+                        "amount": round(
+                            po_amount_usd or 0,
+                            2,
+                        ),
+                    },
+                    "invoice_value": {
+                        "quantity": invoice_line.quantity,
+                        "unit_price": round(
+                            invoice_line.unit_price or 0,
+                            2,
+                        ),
+                        "amount": round(
+                            invoice_line.amount or 0,
+                            2,
+                        ),
+                    },
+                }
+            )
 
         # ======================================================
         # Match Score
@@ -394,7 +545,7 @@ class MatchingService:
 
             if is_match:
 
-                invoice.processing_status = "Approval Pending"
+                invoice.processing_status = "Matched"
 
                 # ----------------------------------------------
                 # Resolve existing open exception
@@ -428,10 +579,10 @@ class MatchingService:
                 self.db.add(
                     InvoiceStatusLog(
                         invoice_id=invoice.id,
-                        status="Approval Pending",
+                        status="Matched",
                         remarks=(
                             "Invoice successfully matched with "
-                            "Purchase Order. Awaiting invoice approval."
+                            f"Purchase Order {purchase_order.po_number}."
                         ),
                         updated_by="System",
                     )
@@ -518,6 +669,21 @@ class MatchingService:
             raise
 
         # ======================================================
+        # Debug Values
+        # ======================================================
+
+        print("PO total:", purchase_order.total_amount)
+        print("PO total USD:", po_total_usd)
+
+        print("Invoice total:", invoice.total_amount)
+        print("Invoice tax:", invoice.tax)
+
+        print(
+            "Invoice excluding tax:",
+            invoice_amount_excluding_tax,
+        )
+
+        # ======================================================
         # Response
         # ======================================================
 
@@ -527,6 +693,22 @@ class MatchingService:
             "po_number": purchase_order.po_number,
             "is_match": is_match,
             "match_score": score,
+            "matched_details": matched_details,
+            "amount_excluding_tax": {
+                "po": round(po_total_usd or 0, 2),
+                "invoice": round(invoice_amount_excluding_tax or 0, 2),
+            },
+
+            "amount_including_tax": {
+                "po": round(po_amount_including_tax or 0, 2),
+                "invoice": round(invoice_amount_including_tax or 0, 2),
+            },
+
+            "tax": {
+                "po": round(po_tax_usd or 0, 2),
+                "invoice": round(invoice.tax or 0, 2),
+                "excluded_from_matching": True,
+            },
             "mismatches": [
                 {
                     "field_name": mismatch[0],
@@ -553,7 +735,7 @@ class MatchingService:
                 else "Invoice matched with mismatches."
             ),
         }
-
+        
     # ==========================================================
     # Approve Match Override
     # ==========================================================

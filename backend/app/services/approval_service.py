@@ -112,6 +112,33 @@ class ApprovalService:
                 line.amount = float(line.quantity) * float(line.unit_price)
 
     # ======================================================
+    # Check whether actual invoice edits exist
+    # ======================================================
+    def has_invoice_edits(self, edits) -> bool:
+        if edits is None:
+            return False
+
+        header_fields = [
+            "invoice_number",
+            "vendor_name",
+            "vendor_address",
+            "customer_name",
+            "invoice_date",
+            "due_date",
+            "purchase_order_number",
+            "currency",
+            "subtotal",
+            "tax",
+            "total_amount",
+        ]
+
+        for field in header_fields:
+            if getattr(edits, field, None) is not None:
+                return True
+
+        return bool(getattr(edits, "line_items", None))
+
+    # ======================================================
     # Approve Invoice
     # ======================================================
     def approve_invoice(
@@ -136,18 +163,28 @@ class ApprovalService:
 
         # A financial edit invalidates the previous match.  It is saved for
         # review, but the invoice must be matched again before approval.
-        if invoice_edits is not None:
+        if self.has_invoice_edits(invoice_edits):
             self.apply_invoice_edits(invoice, invoice_edits)
+
             invoice.processing_status = "Review Required"
-            self.db.add(InvoiceStatusLog(
-                invoice_id=invoice.id,
-                status="Review Required",
-                remarks="Invoice values changed during approval. Run 2-way matching again.",
-                updated_by=approved_by,
-            ))
+
+            self.db.add(
+                InvoiceStatusLog(
+                    invoice_id=invoice.id,
+                    status="Review Required",
+                    remarks=(
+                        "Invoice values changed during approval. "
+                        "Run 2-way matching again."
+                    ),
+                    updated_by=approved_by,
+                )
+            )
+
             self.db.commit()
+
             raise ValueError(
-                "Invoice values were updated. Run 2-way matching again before approval."
+                "Invoice values were updated. "
+                "Run 2-way matching again before approval."
             )
 
         invoice.processing_status = "Approved"
@@ -209,6 +246,9 @@ class ApprovalService:
 
         if invoice is None:
             return None
+
+        print("Approval invoice ID:", invoice.id)
+        print("Approval invoice status:", repr(invoice.processing_status))
 
         invoice.processing_status = "Rejected"
 

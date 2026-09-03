@@ -603,7 +603,7 @@ export default function DashboardPage() {
       label: "Payments",
       stage:
         dashboard?.funnel?.payments,
-      href: "#",
+      href: "/dashboard/payment-center",
     },
   ];
 

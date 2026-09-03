@@ -8,8 +8,24 @@ interface DashboardOverview {
     total_invoices: number;
     total_exceptions: number;
     total_invoice_value: number;
+    invoices_processed?: number;
+    pending_invoices?: number;
+    matched_invoices?: number;
   };
+
   invoice_status: Record<string, number>;
+
+  invoice_intelligence?: {
+    total_invoices_received?: number;
+    successfully_extracted?: number;
+    extraction_failed?: number;
+    duplicate_invoices?: number;
+    po_linked_invoices?: number;
+    non_po_invoices?: number;
+    matched_invoices?: number;
+    unmatched_invoices?: number;
+    exception_count?: number;
+  };
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -60,34 +76,68 @@ export default function InvoiceIntelligencePage() {
   }
 
   const statuses = data?.invoice_status ?? {};
-  const totalInvoices = data?.kpis.total_invoices ?? 0;
+  const invoiceIntelligence = data?.invoice_intelligence;
+
+  const totalInvoices =
+    data?.kpis.total_invoices ??
+    invoiceIntelligence?.total_invoices_received ??
+    0;
 
   const duplicateInvoices =
+    invoiceIntelligence?.duplicate_invoices ??
     statuses["Duplicate"] ??
     statuses["Duplicate Invoice"] ??
     0;
 
   const extractionFailed =
+    invoiceIntelligence?.extraction_failed ??
     statuses["Extraction Failed"] ??
     statuses["Failed"] ??
     0;
 
+  /*
+  * Only these statuses are pending.
+  * Matched, PO Linked, Approved and Paid are not pending.
+  */
   const pendingInvoices =
-    statuses["Pending"] ??
-    statuses["Pending Review"] ??
-    statuses["Pending Approval"] ??
+    data?.kpis.pending_invoices ??
+    (
+      (statuses["Pending"] ?? 0) +
+      (statuses["Pending Review"] ?? 0) +
+      (statuses["Pending Approval"] ?? 0) +
+      (statuses["Approval Pending"] ?? 0) +
+      (statuses["Review Required"] ?? 0)
+    );
+
+  const successfullyProcessed =
+    data?.kpis.invoices_processed ??
+    (
+      (statuses["Approved"] ?? 0) +
+      (statuses["Processed"] ?? 0) +
+      (statuses["Paid"] ?? 0) +
+      (statuses["PO Linked"] ?? 0)
+    );
+
+  const poLinkedInvoices =
+    invoiceIntelligence?.po_linked_invoices ??
+    statuses["PO Linked"] ??
     0;
 
-  const approvedInvoices =
-    statuses["Approved"] ??
-    statuses["Processed"] ??
-    0;
+  /*
+  * This is only a frontend fallback.
+  * The backend value is preferred when available.
+  */
+  const nonPoInvoices =
+    invoiceIntelligence?.non_po_invoices ??
+    Math.max(totalInvoices - poLinkedInvoices, 0);
 
   const exceptionCount =
-    data?.kpis.total_exceptions ?? 0;
+    data?.kpis.total_exceptions ??
+    invoiceIntelligence?.exception_count ??
+    0;
 
   return (
-    <main className="min-h-screen bg-surface pt-24 pb-12">
+    <main className="min-h-screen bg-surface pt-6 pb-12">
       <div className="max-w-container-max mx-auto px-margin-desktop">
 
         <PageHeader
@@ -104,7 +154,7 @@ export default function InvoiceIntelligencePage() {
 
           <MetricCard
             title="Successfully Processed"
-            value={approvedInvoices}
+            value={successfullyProcessed}
           />
 
           <MetricCard
@@ -136,7 +186,7 @@ export default function InvoiceIntelligencePage() {
 
           <MetricCard
             title="PO-Linked / Non-PO"
-            value="API data required"
+            value={`${poLinkedInvoices} / ${nonPoInvoices}`}
           />
 
         </div>

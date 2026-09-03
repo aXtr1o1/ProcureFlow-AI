@@ -418,19 +418,20 @@ async def delete_invoice(blob_name: str):
 # Send a successfully matched invoice for approval
 # ==========================================================
 @router.put("/{invoice_id}/status")
-async def update_invoice_status(
+def update_invoice_status(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-
     invoice_service = InvoiceService(db)
 
     invoice = invoice_service.send_for_approval(invoice_id)
 
     return {
         "success": True,
-        "status": invoice.processing_status
+        "invoice_id": invoice.id,
+        "status": invoice.processing_status,
+        "message": "Invoice sent for approval successfully.",
     }
 
 @router.post("/analyze")

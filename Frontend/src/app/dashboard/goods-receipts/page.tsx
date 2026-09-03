@@ -31,24 +31,21 @@ export default function GoodsReceiptsPage() {
 
   return (
     <main className="p-6">
-      <div className="mb-8 flex items-center justify-between gap-4">
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold">
             Goods Receipts
           </h1>
 
-          <p className="mt-2 text-sm text-gray-500">
+          <p className="text-sm text-gray-500">
             Track received goods and services.
           </p>
         </div>
 
         <Link
           href="/dashboard/goods-receipts/create"
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 hover:shadow-md"
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
-          <span className="material-symbols-outlined text-[20px]">
-            add
-          </span>
           Create Receipt
         </Link>
       </div>

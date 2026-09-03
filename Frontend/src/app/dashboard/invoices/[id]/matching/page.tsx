@@ -6,6 +6,7 @@ import {
   getInvoice,
   matchInvoice,
   linkInvoiceToPurchaseOrder,
+  getPurchaseOrders,
   updateInvoiceStatus,
   approveMatchOverride,
   rejectInvoiceMatch,
@@ -39,10 +40,28 @@ interface Invoice {
   line_items: LineItem[];
 }
 
+interface PurchaseOrder {
+  id: number;
+  po_number: string;
+  vendor_name: string;
+  currency: string;
+  subtotal: number;
+  tax: number;
+  total_amount: number;
+  status: string;
+}
+
 interface MatchingMismatch {
   field_name: string;
   invoice_value: string | null;
   po_value: string | null;
+}
+
+interface MatchingDetail {
+  field_name: string;
+  invoice_value: unknown;
+  po_value: unknown;
+  excluded_from_matching?: boolean;
 }
 
 interface MatchingResult {
@@ -51,7 +70,27 @@ interface MatchingResult {
   po_number: string;
   is_match: boolean;
   match_score: number;
+
+  matched_details?: MatchingDetail[];
+
+  amount_excluding_tax?: {
+    po: number;
+    invoice: number;
+  };
+
+  amount_including_tax?: {
+    po: number;
+    invoice: number;
+  };
+
+  tax?: {
+    po: number;
+    invoice: number;
+    excluded_from_matching: boolean;
+  };
+
   mismatches: MatchingMismatch[];
+
   status: string;
   message: string;
   match_run_id: number;
@@ -75,7 +114,9 @@ export default function InvoiceMatchingPage() {
   const [rejectingInvoice, setRejectingInvoice] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
 
-  const [purchaseOrderId, setPurchaseOrderId] = useState("");
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] =
+    useState("");
 
   const [error, setError] = useState("");
 
@@ -116,18 +157,108 @@ export default function InvoiceMatchingPage() {
   }, [invoiceId]);
 
   // ==========================================================
+  // Load Purchase Orders
+  // ==========================================================
+
+  useEffect(() => {
+    const loadPurchaseOrders = async () => {
+      try {
+        const orders = await getPurchaseOrders();
+
+        setPurchaseOrders(orders);
+      } catch (err) {
+        console.error(
+          "Failed to load Purchase Orders:",
+          err
+        );
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load Purchase Orders."
+        );
+      }
+    };
+
+    void loadPurchaseOrders();
+  }, []);
+
+  // ==========================================================
+  // Select Currently Linked Purchase Order
+  // ==========================================================
+
+  useEffect(() => {
+    if (
+      !invoice?.purchase_order_number ||
+      purchaseOrders.length === 0
+    ) {
+      return;
+    }
+
+    const linkedPO = purchaseOrders.find(
+      (po) =>
+        po.po_number === invoice.purchase_order_number
+    );
+
+    if (linkedPO) {
+      setSelectedPurchaseOrderId(
+        String(linkedPO.id)
+      );
+    }
+  }, [
+    invoice?.purchase_order_number,
+    purchaseOrders,
+  ]);
+
+  // ==========================================================
   // Link Purchase Order
   // ==========================================================
 
   const handleLinkPurchaseOrder = async () => {
     if (!invoice) return;
 
-    const poId = Number(purchaseOrderId);
+    const poId = Number(selectedPurchaseOrderId);
 
     if (!poId || poId <= 0) {
-      setError("Please enter a valid Purchase Order ID.");
+      setError("Please select a Purchase Order.");
       return;
     }
+
+    const selectedPO = purchaseOrders.find(
+      (po) => po.id === poId
+    );
+
+    if (!selectedPO) {
+      setError("Selected Purchase Order was not found.");
+      return;
+    }
+
+    // --------------------------------------------------------
+    // Frontend vendor validation
+    // --------------------------------------------------------
+
+    const invoiceVendor = (
+      invoice.vendor_name || ""
+    )
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+    const poVendor = (
+      selectedPO.vendor_name || ""
+    )
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+    if (invoiceVendor !== poVendor) {
+      setError(
+        `Selected Purchase Order belongs to "${selectedPO.vendor_name}", ` +
+        `but this invoice belongs to "${invoice.vendor_name}".`
+      );
+      return;
+    }
+
 
     try {
       setLinking(true);
@@ -165,7 +296,7 @@ export default function InvoiceMatchingPage() {
         await loadInvoice();
       }
 
-      setPurchaseOrderId("");
+      setSelectedPurchaseOrderId(String(poId));
     } catch (err) {
       console.error(
         "Failed to link Purchase Order:",
@@ -202,6 +333,8 @@ export default function InvoiceMatchingPage() {
 
       const response = await matchInvoice(invoice.id);
 
+      const matchingData = response;
+
       setResult(response);
 
       setInvoice((previous) =>
@@ -209,7 +342,7 @@ export default function InvoiceMatchingPage() {
           ? {
               ...previous,
               processing_status:
-                response.status ||
+                matchingData.status ||
                 previous.processing_status,
             }
           : previous
@@ -528,7 +661,7 @@ export default function InvoiceMatchingPage() {
               The invoice matches the Purchase Order successfully.
             </p>
 
-            <div className="mx-auto mt-6 grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="mx-auto mt-6 grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 
               <InfoCard
                 label="PO Number"
@@ -543,6 +676,30 @@ export default function InvoiceMatchingPage() {
               <InfoCard
                 label="Match Run"
                 value={String(result.match_run_id)}
+              />
+
+              <InfoCard
+                label="PO Amount Excluding Tax"
+                value={formatUsd(
+                  result.amount_excluding_tax?.po ?? 0,
+                  "USD"
+                )}
+              />
+
+              <InfoCard
+                label="Invoice Amount Excluding Tax"
+                value={formatUsd(
+                  result.amount_excluding_tax?.invoice ?? 0,
+                  "USD"
+                )}
+              />
+
+              <InfoCard
+                label="Invoice Tax"
+                value={formatUsd(
+                  result.tax?.invoice ?? 0,
+                  "USD"
+                )}
               />
 
             </div>
@@ -564,7 +721,7 @@ export default function InvoiceMatchingPage() {
             Review Required
         ===================================================== */}
 
-        {reviewRequired && result && (
+        {reviewRequired && (
           <div className="mb-6 rounded-2xl border border-yellow-200 bg-yellow-50 p-8">
 
             <div className="flex items-center gap-4">
@@ -591,7 +748,7 @@ export default function InvoiceMatchingPage() {
               </h3>
 
               <div className="mt-4 space-y-4">
-                {result.mismatches.map(
+                {(result?.mismatches ?? []).map(
                   (mismatch, index) => (
                     <div
                       key={`${mismatch.field_name}-${index}`}
@@ -1007,100 +1164,174 @@ export default function InvoiceMatchingPage() {
               </div>
 
               {/* =================================================
-                  Link PO
+                  Purchase Order Selection
               ================================================= */}
 
-              {!isPOLinked && (
-                <div className="mt-6 rounded-xl border border-yellow-200 bg-yellow-50 p-5">
+              <div className="mt-6 rounded-xl border border-yellow-200 bg-yellow-50 p-5">
 
-                  <h3 className="font-semibold text-yellow-900">
-                    Purchase Order Required
-                  </h3>
+                <h3 className="font-semibold text-yellow-900">
+                  Purchase Order
+                </h3>
 
-                  <p className="mt-1 text-sm text-yellow-800">
-                    This invoice must be linked to a Purchase
-                    Order before 2-Way Matching can be performed.
-                  </p>
+                <p className="mt-1 text-sm text-yellow-800">
+                  Select the Purchase Order that belongs to this invoice.
+                </p>
 
-                  <div className="mt-4">
+                <div className="mt-4">
 
-                    <label
-                      htmlFor="purchase-order-id"
-                      className="block text-sm font-medium text-on-surface"
-                    >
-                      Purchase Order ID
-                    </label>
-
-                    <input
-                      id="purchase-order-id"
-                      type="number"
-                      min="1"
-                      value={purchaseOrderId}
-                      onChange={(event) =>
-                        setPurchaseOrderId(
-                          event.target.value
-                        )
-                      }
-                      placeholder="Enter Purchase Order ID"
-                      className="mt-2 w-full rounded-lg border border-outline-variant bg-white px-4 py-3 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    />
-
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleLinkPurchaseOrder}
-                    disabled={
-                      linking ||
-                      !purchaseOrderId
-                    }
-                    className="mt-4 w-full rounded-lg bg-primary px-5 py-3 font-semibold text-on-primary shadow-md hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                  <label
+                    htmlFor="purchase-order"
+                    className="block text-sm font-medium text-on-surface"
                   >
-                    {linking
-                      ? "Linking Purchase Order..."
+                    Select Purchase Order
+                  </label>
+
+                  <select
+                    id="purchase-order"
+                    value={selectedPurchaseOrderId}
+                    onChange={(event) =>
+                      setSelectedPurchaseOrderId(
+                        event.target.value
+                      )
+                    }
+                    className="mt-2 w-full rounded-lg border border-outline-variant bg-white px-4 py-3 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="">
+                      Select Purchase Order
+                    </option>
+
+                    {purchaseOrders
+                      .filter((po) => {
+                        const invoiceVendor = (
+                          invoice.vendor_name || ""
+                        )
+                          .replace(/\s+/g, " ")
+                          .trim()
+                          .toLowerCase();
+
+                        const poVendor = (
+                          po.vendor_name || ""
+                        )
+                          .replace(/\s+/g, " ")
+                          .trim()
+                          .toLowerCase();
+
+                        return invoiceVendor === poVendor;
+                      })
+                      .filter(
+                        (po) =>
+                          po.status !== "Cancelled" &&
+                          po.status !== "Closed"
+                      )
+                      .map((po) => (
+                        <option
+                          key={po.id}
+                          value={po.id}
+                        >
+                          {po.po_number} - {po.vendor_name} -{" "}
+                          {po.currency}{" "}
+                          {Number(
+                            po.total_amount || 0
+                          ).toLocaleString()}
+                        </option>
+                      ))}
+                  </select>
+
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleLinkPurchaseOrder}
+                  disabled={
+                    linking ||
+                    !selectedPurchaseOrderId
+                  }
+                  className="mt-4 w-full rounded-lg bg-primary px-5 py-3 font-semibold text-on-primary shadow-md hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {linking
+                    ? "Linking Purchase Order..."
+                    : isPOLinked
+                      ? "Change Purchase Order"
                       : "Link Purchase Order"}
-                  </button>
+                </button>
 
-                </div>
-              )}
+                {isPOLinked && (
+                  <div
+                    className={`mt-6 rounded-xl border p-4 ${
+                      invoice.processing_status === "Review Required"
+                        ? "border-yellow-200 bg-yellow-50"
+                        : invoice.processing_status === "Matched"
+                          ? "border-green-200 bg-green-50"
+                          : "border-blue-200 bg-blue-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`material-symbols-outlined ${
+                          invoice.processing_status === "Review Required"
+                            ? "text-yellow-600"
+                            : invoice.processing_status === "Matched"
+                              ? "text-green-600"
+                              : "text-blue-600"
+                        }`}
+                      >
+                        {invoice.processing_status === "Review Required"
+                          ? "warning"
+                          : invoice.processing_status === "Matched"
+                            ? "check_circle"
+                            : "link"}
+                      </span>
 
-              {/* =================================================
-                  PO Linked
-              ================================================= */}
+                      <div>
+                        <p
+                          className={`font-semibold ${
+                            invoice.processing_status === "Review Required"
+                              ? "text-yellow-800"
+                              : invoice.processing_status === "Matched"
+                                ? "text-green-800"
+                                : "text-blue-800"
+                          }`}
+                        >
+                          {invoice.processing_status === "Review Required"
+                            ? "Review Required"
+                            : invoice.processing_status === "Matched"
+                              ? "Invoice Matched"
+                              : "Purchase Order Linked"}
+                        </p>
 
-              {isPOLinked && (
-                <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-4">
+                        <p
+                          className={`text-sm ${
+                            invoice.processing_status === "Review Required"
+                              ? "text-yellow-700"
+                              : invoice.processing_status === "Matched"
+                                ? "text-green-700"
+                                : "text-blue-700"
+                          }`}
+                        >
+                          {invoice.purchase_order_number}
+                        </p>
 
-                  <div className="flex items-center gap-3">
-
-                    <span className="material-symbols-outlined text-green-600">
-                      check_circle
-                    </span>
-
-                    <div>
-                      <p className="font-semibold text-green-800">
-                        Purchase Order Linked
-                      </p>
-
-                      <p className="text-sm text-green-700">
-                        {invoice.purchase_order_number}
-                      </p>
+                        {invoice.processing_status === "Review Required" && (
+                          <p className="mt-1 text-sm text-yellow-800">
+                            Invoice mismatch detected. Manual review is required.
+                          </p>
+                        )}
+                      </div>
                     </div>
-
                   </div>
+                )}
 
-                </div>
-              )}
-
-            </section>
-          </div>
-        )}
+              </div>
+          </section>
+        </div>
+        )}    
 
         {/* =====================================================
             Run Matching
         ===================================================== */}
 
-        {!result && (
+        {!result &&
+          invoice.processing_status !== "Review Required" && (
           <section className="mt-6 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6">
 
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
@@ -1111,8 +1342,9 @@ export default function InvoiceMatchingPage() {
                 </h2>
 
                 <p className="mt-1 text-sm text-on-surface-variant">
-                  The system will compare vendor, currency,
-                  subtotal, tax, total amount and line items.
+                  The system will compare the vendor, currency,
+                  amount excluding tax and line items.
+                  Tax is displayed for information only.
                 </p>
               </div>
 

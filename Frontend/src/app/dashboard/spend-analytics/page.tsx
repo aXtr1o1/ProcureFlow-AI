@@ -47,7 +47,7 @@ export default function SpendAnalyticsPage() {
   const analytics = data?.spend_analytics;
 
   return (
-    <main className="min-h-screen bg-surface pt-24 pb-12">
+    <main className="min-h-screen bg-surface pt-6 pb-12">
       <div className="max-w-container-max mx-auto px-margin-desktop">
 
         <div className="mb-8">
