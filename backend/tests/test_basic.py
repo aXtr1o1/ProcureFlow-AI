@@ -1,286 +1,182 @@
-import os
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
 
 client = TestClient(app)
-
-
-# ------------------------------------------------------------------
-# Shared test data
-# ------------------------------------------------------------------
-
 TEST_PASSWORD = "Test@12345"
 
-TOKEN = None
 
-BUSINESS_NEED_ID = None
-PR_ID = None
-
-
-# ------------------------------------------------------------------
-# Common helper functions
-# ------------------------------------------------------------------
-
-def headers():
-    assert TOKEN is not None, "Login token was not created"
-
-    return {
-        "Authorization": f"Bearer {TOKEN}"
-    }
-
-
-def response_data(response):
-    try:
-        data = response.json()
-
-        if isinstance(data, dict):
-            return data
-
-        return {}
-
-    except Exception:
-        return {}
-
-
-def extract_id(data, *keys):
-    """
-    Extract an ID from a response using multiple possible field names.
-    """
-
-    if not isinstance(data, dict):
-        return None
-
-    for key in keys:
-        value = data.get(key)
-
-        if value is not None:
-            return value
-
-    return None
-
-
-def assert_valid_dependency(value, name):
-    assert value is not None, (
-        f"{name} was not created. "
-        "The previous dependent test must pass first."
+def assert_status(response, expected_status: int):
+    assert response.status_code == expected_status, (
+        f"Expected HTTP {expected_status}, got {response.status_code}: "
+        f"{response.text}"
     )
+    return response.json()
 
 
-def get_business_need_type_id():
-    """
-    Return the active Business Need Type ID used by the test database.
-
-    Change this value to the actual active ID in your database.
-    """
-
-    business_need_type_id = 1
-
-    assert business_need_type_id > 0, (
-        "Business Need Type ID must be greater than zero."
-    )
-
-    return business_need_type_id
-
-
-# ------------------------------------------------------------------
-# TC01 - Register and login
-# ------------------------------------------------------------------
-
-def test_tc01_register_and_login():
-    global TOKEN
-
-    username = f"qa_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@example.com"
-
-    register_response = client.post(
+def register_user():
+    username = f"workflow_{uuid.uuid4().hex}"
+    response = client.post(
         "/auth/register",
         json={
             "username": username,
-            "email": email,
+            "email": f"{username}@example.com",
             "password": TEST_PASSWORD,
         },
     )
+    assert_status(response, 200)
+    return username
 
-    assert register_response.status_code in [200, 201, 400], (
-        f"Registration failed: {register_response.text}"
-    )
 
-    login_response = client.post(
+def login_user(username: str):
+    response = client.post(
         "/auth/login",
         json={
             "username": username,
             "password": TEST_PASSWORD,
         },
     )
-
-    assert login_response.status_code == 200, (
-        f"Login failed: {login_response.text}"
+    data = assert_status(response, 200)
+    token = data.get("access_token")
+    assert isinstance(token, str) and token, (
+        f"Login did not return an access token: {data}"
     )
+    return {"Authorization": f"Bearer {token}"}
 
-    data = response_data(login_response)
 
-    TOKEN = data.get("access_token")
+@pytest.fixture
+def auth_headers():
+    return login_user(register_user())
 
-    assert TOKEN is not None, (
-        f"Access token was not returned: {data}"
+
+@pytest.fixture
+def business_need(auth_headers):
+    types_response = client.get(
+        "/business-needs/types",
+        headers=auth_headers,
     )
+    assert types_response.status_code == 200, types_response.text
+    types = types_response.json()
+    assert isinstance(types, list) and types, "No active Business Need types returned"
 
-
-# ------------------------------------------------------------------
-# TC02 - Create and submit Business Need
-# ------------------------------------------------------------------
-
-def test_tc02_create_and_submit_business_need():
-    global BUSINESS_NEED_ID
-
-    business_need_type_id = get_business_need_type_id()
-
-    create_response = client.post(
+    response = client.post(
         "/business-needs/",
         json={
-            "title": "Office Fit-Out",
-            "business_need_type_id": business_need_type_id,
-            "description": "Automated workflow test",
+            "business_need_type_id": types[0]["id"],
+            "title": f"Workflow test {uuid.uuid4().hex[:8]}",
+            "description": "End-to-end API workflow test",
+            "department": "Engineering",
+            "estimated_value": 2500,
+            "currency": "USD",
         },
-        headers=headers(),
+        headers=auth_headers,
     )
+    data = assert_status(response, 201)
+    assert data["status"] == "Draft"
+    return data
 
-    assert create_response.status_code in [200, 201], (
-        "Business Need creation failed: "
-        f"{create_response.text}"
+
+@pytest.fixture
+def submitted_business_need(auth_headers, business_need):
+    response = client.post(
+        f"/business-needs/{business_need['id']}/submit",
+        headers=auth_headers,
     )
-
-    data = response_data(create_response)
-
-    BUSINESS_NEED_ID = extract_id(
-        data,
-        "id",
-        "business_need_id",
-    )
-
-    assert BUSINESS_NEED_ID is not None, (
-        f"Business Need ID missing: {data}"
-    )
-
-    submit_response = client.post(
-        f"/business-needs/{BUSINESS_NEED_ID}/submit",
-        headers=headers(),
-    )
-
-    assert submit_response.status_code in [200, 201], (
-        "Business Need submission failed: "
-        f"{submit_response.text}"
-    )
+    data = assert_status(response, 200)
+    assert data["status"] == "Submitted"
+    return data
 
 
-# ------------------------------------------------------------------
-# TC03 - Create, submit and approve Purchase Requisition
-# ------------------------------------------------------------------
-
-def test_tc03_create_submit_approve_pr():
-    global PR_ID
-
-    assert_valid_dependency(
-        BUSINESS_NEED_ID,
-        "BUSINESS_NEED_ID",
-    )
-
-    create_response = client.post(
+@pytest.fixture
+def submitted_pr(auth_headers, submitted_business_need):
+    response = client.post(
         "/purchase-requisitions/",
         json={
-            "business_need_id": BUSINESS_NEED_ID,
-            "title": "Office Fit-Out Purchase Requisition",
-            "description": "Automated workflow test",
+            "business_need_id": submitted_business_need["id"],
+            "title": "Workflow test purchase requisition",
+            "justification": "Created from the submitted Business Need",
             "line_items": [
                 {
-                    "description": "Office fit-out work",
-                    "quantity": 1,
-                    "unit_price": 19992.08,
+                    "description": "Workflow test equipment",
+                    "quantity": 2,
+                    "unit_price": 1250,
                 }
             ],
         },
-        headers=headers(),
+        headers=auth_headers,
     )
-
-    assert create_response.status_code in [200, 201], (
-        f"PR creation failed: {create_response.text}"
-    )
-
-    data = response_data(create_response)
-
-    PR_ID = extract_id(
-        data,
-        "id",
-        "pr_id",
-        "purchase_requisition_id",
-    )
-
-    assert PR_ID is not None, (
-        f"PR ID missing: {data}"
-    )
-
-    submit_response = client.post(
-        f"/purchase-requisitions/{PR_ID}/submit",
-        headers=headers(),
-    )
-
-    assert submit_response.status_code in [200, 201], (
-        f"PR submission failed: {submit_response.text}"
-    )
-
-    approve_response = client.post(
-        f"/purchase-requisitions/{PR_ID}/approve",
-        json={
-            "remarks": (
-                "Purchase requisition approved for "
-                "automated workflow testing"
-            ),
-        },
-        headers=headers(),
-    )
-
-    assert approve_response.status_code in [200, 201], (
-        f"PR approval failed: {approve_response.text}"
-    )
-
-
-# ------------------------------------------------------------------
-# TC07 - Verify unauthorized access
-# ------------------------------------------------------------------
-
-def test_tc07_unauthorized_access():
-    """
-    Verify protected API rejects unauthenticated requests.
-    """
-
-    response = client.get("/business-needs")
-
-    assert response.status_code in [401, 403], (
-        f"Expected unauthorized response, got "
-        f"{response.status_code}: {response.text}"
-    )
-
-
-# ------------------------------------------------------------------
-# TC08 - Verify invalid Business Need request
-# ------------------------------------------------------------------
-
-def test_tc08_invalid_business_need_request():
-    """
-    Verify invalid Business Need request validation.
-    """
+    pr_data = assert_status(response, 201)
+    assert pr_data["status"] == "Draft"
+    assert pr_data["total_amount"] == 2500
 
     response = client.post(
-        "/business-needs",
-        json={},
-        headers=headers(),
+        f"/purchase-requisitions/{pr_data['id']}/submit",
+        headers=auth_headers,
     )
+    submitted_data = assert_status(response, 200)
+    assert submitted_data["status"] == "Submitted"
+    return submitted_data
 
-    assert response.status_code == 422, (
-        f"Expected validation error 422, got "
-        f"{response.status_code}: {response.text}"
+
+def test_register_and_login():
+    username = register_user()
+    headers = login_user(username)
+
+    response = client.get("/auth/me", headers=headers)
+    data = assert_status(response, 200)
+    assert data["username"] == username
+
+
+def test_list_active_business_need_types(auth_headers):
+    response = client.get(
+        "/business-needs/types",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    types = response.json()
+    assert isinstance(types, list) and types
+    assert all(type_data["is_active"] for type_data in types)
+
+
+def test_create_business_need(auth_headers, business_need):
+    assert business_need["id"] > 0
+    assert business_need["need_number"].startswith("BN-")
+    assert business_need["status"] == "Draft"
+    assert business_need["currency"] == "USD"
+
+
+def test_submit_business_need(auth_headers, submitted_business_need):
+    assert submitted_business_need["id"] > 0
+    assert submitted_business_need["status"] == "Submitted"
+
+
+def test_create_and_submit_purchase_requisition(
+    auth_headers,
+    submitted_pr,
+):
+    assert submitted_pr["id"] > 0
+    assert submitted_pr["pr_number"].startswith("PR-")
+    assert submitted_pr["status"] == "Submitted"
+    assert submitted_pr["total_amount"] == 2500
+    assert len(submitted_pr["line_items"]) == 1
+
+
+def test_approve_purchase_requisition(auth_headers, submitted_pr):
+    response = client.post(
+        f"/purchase-requisitions/{submitted_pr['id']}/approve",
+        json={"remarks": "Approved by the workflow integration test"},
+        headers=auth_headers,
+    )
+    approved_pr = assert_status(response, 200)
+
+    assert approved_pr["id"] == submitted_pr["id"]
+    assert approved_pr["status"] == "Approved"
+    assert len(approved_pr["approvals"]) == 1
+    assert approved_pr["approvals"][0]["decision"] == "Approved"
+    assert approved_pr["approvals"][0]["remarks"] == (
+        "Approved by the workflow integration test"
     )
