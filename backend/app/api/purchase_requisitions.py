@@ -52,7 +52,9 @@ def list_purchase_requisitions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return PurchaseRequisitionService(db).list()
+    return PurchaseRequisitionService(db).list(
+        user_id=current_user.id,
+    )
 
 
 # ==========================================================
@@ -68,7 +70,10 @@ def get_purchase_requisition(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return PurchaseRequisitionService(db).get_by_id(pr_id)
+    return PurchaseRequisitionService(db).get_by_id(
+        pr_id, 
+        user_id=current_user.id
+    )
 
 
 # ==========================================================

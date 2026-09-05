@@ -47,7 +47,10 @@ def get_dashboard_overview(
         - Spend information
     """
 
-    service = DashboardService(db)
+    service = DashboardService(
+        db,
+        current_user.id,
+    )
 
     try:
         return service.get_overview()
@@ -80,7 +83,10 @@ def get_dashboard_funnel(
     Return procurement lifecycle funnel data.
     """
 
-    service = DashboardService(db)
+    service = DashboardService(
+        db,
+        current_user.id,
+    )
 
     try:
         return service.get_funnel()
@@ -113,7 +119,10 @@ def get_dashboard_spend(
     Return procurement and payment financial metrics.
     """
 
-    service = DashboardService(db)
+    service = DashboardService(
+        db,
+        current_user.id,
+    )
 
     try:
         return service.get_spend()

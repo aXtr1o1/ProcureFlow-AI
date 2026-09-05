@@ -67,7 +67,9 @@ def get_all_goods_receipts(
 ):
     service = GoodsReceiptService(db)
 
-    return service.get_all_goods_receipts()
+    return service.get_all_goods_receipts(
+        user_id=current_user.id,
+    )
 
 
 # ==========================================================
@@ -84,7 +86,10 @@ def get_goods_receipt(
 ):
     service = GoodsReceiptService(db)
 
-    receipt = service.get_goods_receipt(receipt_id)
+    receipt = service.get_goods_receipt(
+        receipt_id=receipt_id,
+        user_id=current_user.id
+    )
 
     if receipt is None:
         raise HTTPException(
@@ -110,7 +115,10 @@ def get_goods_receipts_for_purchase_order(
     service = GoodsReceiptService(db)
 
     try:
-        return service.get_by_purchase_order(po_id)
+        return service.get_by_purchase_order(
+            po_id=po_id,
+            user_id=current_user.id
+        )
 
     except ValueError as error:
         raise HTTPException(

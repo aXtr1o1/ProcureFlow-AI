@@ -80,53 +80,81 @@ export default function InvoicePaymentPage() {
       setLoading(true);
       setError("");
 
-      const [
-        invoiceResponse,
-        summaryResponse,
-        paymentsResponse,
-      ] = await Promise.all([
-        getInvoice(invoiceId),
-        getInvoicePaymentSummary(invoiceId),
-        getInvoicePayments(invoiceId),
-      ]);
+      // First load the invoice.
+      // This must succeed even if there are no payments.
+      const invoiceResponse = await getInvoice(invoiceId);
 
-      setInvoice(
-        invoiceResponse?.data ?? invoiceResponse
-      );
+      const invoiceData =
+        invoiceResponse?.data ?? invoiceResponse;
 
-      setSummary(summaryResponse);
-      setPayments(paymentsResponse);
-
-      if (
-        summaryResponse &&
-        summaryResponse.remaining_amount > 0
-      ) {
-        setAmount(
-          String(summaryResponse.remaining_amount)
-        );
+      if (!invoiceData?.id) {
+        throw new Error("Invoice was not found.");
       }
-    } catch (err) {
-      console.error(err);
 
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to load payment information."
+      setInvoice(invoiceData);
+
+      // Payment summary and history may be empty for new invoices.
+      // Fetch both independently so one failure doesn’t block the other.
+      const [summaryResponse, paymentsResponse] =
+        await Promise.allSettled([
+          getInvoicePaymentSummary(invoiceId),
+          getInvoicePayments(invoiceId),
+        ]);
+
+      setSummary(
+        summaryResponse.status === "fulfilled"
+          ? summaryResponse.value ?? null
+          : null
       );
+
+      setPayments(
+        paymentsResponse.status === "fulfilled"
+          ? paymentsResponse.value ?? []
+          : []
+      );
+    } catch (error) {
+      console.error("Payment page loading error:", error);
+
+      setInvoice(null);
+      setSummary(null);
+      setPayments([]);
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load payment information.";
+
+      setError(message);
+
+      // Only redirect on authentication / permission failures,
+      // NOT on 404 — the invoice page itself handles that gracefully.
+      if (
+        message.toLowerCase().includes("permission") ||
+        message.toLowerCase().includes("unauthorized") ||
+        message.toLowerCase().includes("session expired") ||
+        message.toLowerCase().includes("login")
+      ) {
+        router.replace("/dashboard/invoices");
+      }
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    if (!invoiceId || Number.isNaN(invoiceId)) {
+    if (
+      !params.id ||
+      !Number.isInteger(invoiceId) ||
+      invoiceId <= 0
+    ) {
       setError("Invalid invoice ID.");
       setLoading(false);
+      router.replace("/dashboard/invoices");
       return;
     }
 
     void loadPaymentData();
-  }, [invoiceId]);
+  }, [params.id]);
 
   async function handleCreatePayment() {
     if (!invoice) return;
@@ -140,10 +168,10 @@ export default function InvoicePaymentPage() {
       return;
     }
 
-    if (
-      summary &&
-      paymentAmount > summary.remaining_amount
-    ) {
+    const remainingAmount =
+      summary?.remaining_amount ?? invoice.total_amount;
+
+    if (paymentAmount > remainingAmount) {
       setError(
         "Payment amount cannot exceed the remaining invoice amount."
       );
@@ -277,7 +305,17 @@ export default function InvoicePaymentPage() {
       <main className="min-h-screen bg-surface pt-6 pb-12">
         <div className="max-w-container-max mx-auto px-margin-desktop">
           <div className="rounded-xl border border-red-300 bg-red-50 p-6 text-red-900">
-            {error}
+            <p>{error}</p>
+
+            <button
+              type="button"
+              onClick={() =>
+                router.push("/dashboard/invoices")
+              }
+              className="mt-4 rounded-lg bg-primary px-4 py-2 text-white hover:opacity-90"
+            >
+              Back to Invoices
+            </button>
           </div>
         </div>
       </main>
@@ -291,6 +329,14 @@ export default function InvoicePaymentPage() {
   const paymentAllowed =
     invoice.processing_status === "Payment Pending";
 
+  // When no payments exist yet, derive remaining from invoice total.
+  const effectiveSummary = summary ?? {
+    invoice_total: invoice.total_amount,
+    total_paid: 0,
+    remaining_amount: invoice.total_amount,
+    payment_status: "Unpaid",
+    currency: invoice.currency || "USD",
+  };
   return (
     <main className="min-h-screen bg-surface pt-6 pb-12">
       <div className="max-w-container-max mx-auto px-margin-desktop">
@@ -362,40 +408,37 @@ export default function InvoicePaymentPage() {
         </section>
 
         {/* Payment Summary */}
-        {summary && (
-          <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <section className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
 
-            <SummaryCard
-              title="Invoice Total"
-              value={formatUsd(
-                summary.invoice_total,
-                summary.currency
-              )}
-            />
+          <SummaryCard
+            title="Invoice Total"
+            value={formatUsd(
+              effectiveSummary.invoice_total,
+              effectiveSummary.currency
+            )}
+          />
 
-            <SummaryCard
-              title="Total Paid"
-              value={formatUsd(
-                summary.total_paid,
-                summary.currency
-              )}
-            />
+          <SummaryCard
+            title="Total Paid"
+            value={formatUsd(
+              effectiveSummary.total_paid,
+              effectiveSummary.currency
+            )}
+          />
 
-            <SummaryCard
-              title="Remaining Amount"
-              value={formatUsd(
-                summary.remaining_amount,
-                summary.currency
-              )}
-            />
+          <SummaryCard
+            title="Remaining Amount"
+            value={formatUsd(
+              effectiveSummary.remaining_amount,
+              effectiveSummary.currency
+            )}
+          />
 
-          </section>
-        )}
+        </section>
 
         {/* Create Payment */}
         {paymentAllowed &&
-          summary &&
-          summary.remaining_amount > 0 && (
+          effectiveSummary.remaining_amount > 0 && (
             <section className="mt-6 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6">
 
               <h2 className="text-xl font-semibold text-on-surface">
@@ -416,7 +459,7 @@ export default function InvoicePaymentPage() {
                   <input
                     type="number"
                     min="0.01"
-                    max={summary.remaining_amount}
+                    max={effectiveSummary.remaining_amount}
                     step="0.01"
                     value={amount}
                     onChange={(e) =>

@@ -240,7 +240,9 @@ def get_all_purchase_orders(
 ):
     service = PurchaseOrderService(db)
 
-    return service.get_all_purchase_orders()
+    return service.get_all_purchase_orders(
+        user_id=current_user.id,
+    )
 
 
 # ==========================================================
@@ -258,7 +260,8 @@ def get_purchase_order(
     service = PurchaseOrderService(db)
 
     purchase_order = service.get_purchase_order_by_number(
-        po_number
+        po_number = po_number,
+        user_id=current_user.id,
     )
 
     if purchase_order is None:

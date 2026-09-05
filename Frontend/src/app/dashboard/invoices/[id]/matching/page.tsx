@@ -233,37 +233,12 @@ export default function InvoiceMatchingPage() {
       return;
     }
 
-    // --------------------------------------------------------
-    // Frontend vendor validation
-    // --------------------------------------------------------
-
-    const invoiceVendor = (
-      invoice.vendor_name || ""
-    )
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-
-    const poVendor = (
-      selectedPO.vendor_name || ""
-    )
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-
-    if (invoiceVendor !== poVendor) {
-      setError(
-        `Selected Purchase Order belongs to "${selectedPO.vendor_name}", ` +
-        `but this invoice belongs to "${invoice.vendor_name}".`
-      );
-      return;
-    }
-
-
     try {
       setLinking(true);
       setError("");
+      setResult(null);
 
+      // Step 1: Link the Purchase Order
       const response = await linkInvoiceToPurchaseOrder(
         invoice.id,
         poId
@@ -271,45 +246,74 @@ export default function InvoiceMatchingPage() {
 
       console.log("Purchase Order linked:", response);
 
-      // Backend returns the updated invoice
-      const updatedInvoice =
-        response?.data ??
-        response;
+      const updatedInvoice = response;
 
-      if (updatedInvoice?.id) {
-        setInvoice((previous) =>
-          previous
-            ? {
-                ...previous,
-                ...updatedInvoice,
-                purchase_order_number:
-                  updatedInvoice.purchase_order_number,
-                processing_status:
-                  updatedInvoice.processing_status ||
-                  "PO Linked",
-              }
-            : previous
-        );
-      } else {
-        // If backend returns a different structure,
-        // reload invoice from backend.
-        await loadInvoice();
-      }
+      setInvoice((previous) =>
+        previous
+          ? {
+              ...previous,
+              ...updatedInvoice,
+              purchase_order_number:
+                updatedInvoice.purchase_order_number ||
+                selectedPO.po_number,
+              processing_status:
+                updatedInvoice.processing_status ||
+                "PO Linked",
+            }
+          : previous
+      );
 
       setSelectedPurchaseOrderId(String(poId));
+
+      // Step 2: Automatically run matching after linking
+      setMatching(true);
+
+      const matchResponse = await matchInvoice(invoice.id);
+
+      console.log(
+        "MATCH RESPONSE AFTER PO LINK:",
+        matchResponse
+      );
+
+      const matchingData: MatchingResult = matchResponse;
+
+      // Step 3: Store the complete matching result,
+      // including all mismatch fields
+      setResult({
+        ...matchingData,
+        mismatches: Array.isArray(matchingData.mismatches)
+          ? matchingData.mismatches
+          : [],
+      });
+
+      // Step 4: Update invoice status using matching result
+      setInvoice((previous) =>
+        previous
+          ? {
+              ...previous,
+              processing_status:
+                matchingData.status ||
+                previous.processing_status,
+              purchase_order_number:
+                previous.purchase_order_number ||
+                selectedPO.po_number,
+            }
+          : previous
+      );
     } catch (err) {
       console.error(
-        "Failed to link Purchase Order:",
+        "Failed to link or match Purchase Order:",
         err
       );
 
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to link Purchase Order."
+          : "Failed to link or match Purchase Order."
       );
     } finally {
       setLinking(false);
+      setMatching(false);
     }
   };
 
@@ -333,9 +337,16 @@ export default function InvoiceMatchingPage() {
 
       const response = await matchInvoice(invoice.id);
 
-      const matchingData = response;
+      console.log("MATCH API RESPONSE:", response);
 
-      setResult(response);
+      const matchingData: MatchingResult = response;
+
+      setResult({
+        ...matchingData,
+        mismatches: Array.isArray(matchingData.mismatches)
+          ? matchingData.mismatches
+          : [],
+      });
 
       setInvoice((previous) =>
         previous
@@ -348,10 +359,7 @@ export default function InvoiceMatchingPage() {
           : previous
       );
     } catch (err) {
-      console.error(
-        "Invoice matching failed:",
-        err
-      );
+      console.error("Invoice matching failed:", err);
 
       setError(
         err instanceof Error
@@ -569,8 +577,8 @@ export default function InvoiceMatchingPage() {
     invoice.processing_status === "Approval Pending";
 
   const reviewRequired =
-    result?.is_match === false ||
-    invoice.processing_status === "Review Required";
+    result?.is_match === false &&
+    result !== null;
 
   const isRejected =
     invoice.processing_status === "Rejected";
@@ -748,13 +756,13 @@ export default function InvoiceMatchingPage() {
               </h3>
 
               <div className="mt-4 space-y-4">
-                {(result?.mismatches ?? []).map(
-                  (mismatch, index) => (
+                {result?.mismatches &&
+                result.mismatches.length > 0 ? (
+                  result.mismatches.map((mismatch, index) => (
                     <div
                       key={`${mismatch.field_name}-${index}`}
                       className="rounded-lg border border-yellow-200 bg-yellow-50 p-4"
                     >
-                      {/* Field name */}
                       <div className="flex items-center gap-3">
                         <span className="material-symbols-outlined text-yellow-600">
                           error
@@ -765,13 +773,10 @@ export default function InvoiceMatchingPage() {
                         </span>
                       </div>
 
-                      {/* Comparison */}
                       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-
-                        {/* Invoice Value */}
                         <div className="rounded-lg border border-red-200 bg-red-50 p-4">
                           <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
-                            Invoice
+                            Invoice Value
                           </p>
 
                           <p className="mt-2 text-sm font-medium text-on-surface">
@@ -779,20 +784,28 @@ export default function InvoiceMatchingPage() {
                           </p>
                         </div>
 
-                        {/* Purchase Order Value */}
                         <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
                           <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
-                            Purchase Order
+                            Purchase Order Value
                           </p>
 
                           <p className="mt-2 text-sm font-medium text-on-surface">
                             {mismatch.po_value ?? "Not available"}
                           </p>
                         </div>
-
                       </div>
                     </div>
-                  )
+                  ))
+                ) : (
+                  <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                    <p className="font-medium text-yellow-800">
+                      Mismatch details were not returned by the matching service.
+                    </p>
+
+                    <p className="mt-1 text-sm text-yellow-700">
+                      Please check the matching API response and backend mismatch data.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
@@ -1201,29 +1214,12 @@ export default function InvoiceMatchingPage() {
                     </option>
 
                     {purchaseOrders
-                      .filter((po) => {
-                        const invoiceVendor = (
-                          invoice.vendor_name || ""
-                        )
-                          .replace(/\s+/g, " ")
-                          .trim()
-                          .toLowerCase();
-
-                        const poVendor = (
-                          po.vendor_name || ""
-                        )
-                          .replace(/\s+/g, " ")
-                          .trim()
-                          .toLowerCase();
-
-                        return invoiceVendor === poVendor;
-                      })
-                      .filter(
-                        (po) =>
-                          po.status !== "Cancelled" &&
-                          po.status !== "Closed"
-                      )
-                      .map((po) => (
+  .filter(
+    (po) =>
+      po.status !== "Cancelled" &&
+      po.status !== "Closed"
+  )
+  .map((po) => (
                         <option
                           key={po.id}
                           value={po.id}

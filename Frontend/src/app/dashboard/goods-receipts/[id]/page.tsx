@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import html2pdf from "html2pdf.js";
 
 import {
   GoodsReceipt,
@@ -17,6 +18,8 @@ import WorkflowStepper from "@/components/procurement/WorkflowStepper";
 export default function GoodsReceiptDetailsPage() {
   const params = useParams();
   const router = useRouter();
+
+  const receiptPdfRef = useRef<HTMLDivElement>(null);
 
   const id = Number(params.id);
 
@@ -118,6 +121,43 @@ export default function GoodsReceiptDetailsPage() {
     }
   };
 
+    const handleDownloadReceipt = async () => {
+    if (!receiptPdfRef.current || !receipt) {
+      return;
+    }
+
+    const options = {
+      margin: 0.35,
+      filename: `${receipt.receipt_number}.pdf`,
+      image: {
+        type: "jpeg" as const,
+        quality: 0.98,
+      },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        scrollX: 0,
+        scrollY: 0,
+        ignoreElements: (element: HTMLElement) =>
+          element.classList.contains("no-pdf"),
+      },
+      jsPDF: {
+        unit: "in",
+        format: "a4",
+        orientation: "portrait" as const,
+      },
+      pagebreak: {
+        mode: ["css", "legacy"],
+      },
+    };
+
+    await html2pdf()
+      .set(options)
+      .from(receiptPdfRef.current)
+      .save();
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#f8f9fc] p-6">
@@ -132,10 +172,13 @@ export default function GoodsReceiptDetailsPage() {
 
   if (!receipt) {
     return (
-      <main className="min-h-screen bg-[#f8f9fc] p-6">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-600">
-          {error || "Goods Receipt not found."}
-        </div>
+        <main className="min-h-screen bg-[#f8f9fc] p-6">
+          <div
+            ref={receiptPdfRef}
+            id="goods-receipt-pdf"
+            className="bg-white"
+          >
+          </div>
       </main>
     );
   }
@@ -209,22 +252,20 @@ export default function GoodsReceiptDetailsPage() {
 
       {isAccepted && (
         <section className="mb-6 rounded-xl border border-green-200 bg-gradient-to-b from-green-50 to-white px-6 py-10 text-center shadow-sm">
-          {/* Tick Circle */}
-          <div className="mx-auto mb-5 flex h-32 w-32 items-center justify-center rounded-full bg-green-100">
-            <div className="flex h-24 w-24 items-center justify-center rounded-full bg-green-500 shadow-lg">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-14 w-14 text-white"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
-            </div>
+          {/* Success Icon */}
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-500">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-9 w-9 text-white"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
           </div>
 
           {/* Success Message */}
@@ -355,7 +396,7 @@ export default function GoodsReceiptDetailsPage() {
             <button
               type="button"
               onClick={() => window.print()}
-              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700"
+              className="no-pdf inline-flex items-center gap-2 rounded-lg bg-green-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -367,12 +408,12 @@ export default function GoodsReceiptDetailsPage() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <polyline points="6 9 6 2 18 2 18 9" />
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                <rect x="6" y="14" width="12" height="8" />
+                <path d="M12 3v12" />
+                <path d="m7 10 5 5 5-5" />
+                <path d="M5 21h14" />
               </svg>
 
-              Print Receipt
+              Download Receipt
             </button>
           </div>
         </section>

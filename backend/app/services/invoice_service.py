@@ -15,25 +15,26 @@ class InvoiceService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all_invoices(self, user_id: int = None):
-        """
-        Fetch all invoices from the database (newest first).
-        """
-
-        query = self.db.query(Invoice)
-
-        # Optional user filter kept for callers that pass user_id intentionally
-        # Listing is org-wide so invoices remain visible across accounts.
-        return query.order_by(Invoice.id.desc()).all()
-
-
-    def get_invoice_by_number(self, invoice_number: str):
-        """
-        Check whether an invoice already exists.
-        """
+    def get_all_invoices(self, user_id: int):
         return (
             self.db.query(Invoice)
-            .filter(Invoice.invoice_number == invoice_number)
+            .filter(Invoice.user_id == user_id)
+            .order_by(Invoice.id.desc())
+            .all()
+        )
+
+
+    def get_invoice_by_number(
+        self,
+        invoice_number: str,
+        user_id: int,
+    ):
+        return (
+            self.db.query(Invoice)
+            .filter(
+                Invoice.invoice_number == invoice_number,
+                Invoice.user_id == user_id,
+            )
             .first()
         )
 
@@ -123,12 +124,23 @@ class InvoiceService:
 
         return status_log
 
-    def get_invoice_by_id(self, invoice_id: int, user_id: int = None):
-        return (
-            self.db.query(Invoice)
-            .filter(Invoice.id == invoice_id)
-            .first()
-        )
+    def get_invoice_by_id(
+        self,
+        invoice_id: int,
+        user_id: int | None = None,
+    ):
+        """
+        Fetch an invoice by ID, scoped to the owner.
+
+        user_id is required for all external calls. It is optional only
+        internally (e.g. write paths that already validated ownership).
+        """
+        query = self.db.query(Invoice).filter(Invoice.id == invoice_id)
+
+        if user_id is not None:
+            query = query.filter(Invoice.user_id == user_id)
+
+        return query.first()
 
 
     # ==========================================================
@@ -137,24 +149,29 @@ class InvoiceService:
     def link_invoice_to_purchase_order(
         self,
         invoice_id: int,
-        purchase_order_id: int
+        purchase_order_id: int,
+        user_id: int,
     ):
         invoice = (
             self.db.query(Invoice)
-            .filter(Invoice.id == invoice_id)
+            .filter(
+                Invoice.id == invoice_id,
+                Invoice.user_id == user_id,
+            )
             .first()
         )
 
         if invoice is None:
             raise HTTPException(
                 status_code=404,
-                detail="Invoice not found."
+                detail="Invoice not found.",
             )
 
         purchase_order = (
             self.db.query(ProcurementPurchaseOrder)
             .filter(
-                ProcurementPurchaseOrder.id == purchase_order_id
+                ProcurementPurchaseOrder.id == purchase_order_id,
+                ProcurementPurchaseOrder.created_by_id == user_id,
             )
             .first()
         )
@@ -162,12 +179,8 @@ class InvoiceService:
         if purchase_order is None:
             raise HTTPException(
                 status_code=404,
-                detail="Purchase Order not found."
+                detail="Purchase Order not found.",
             )
-
-        # ----------------------------------------------------------
-        # Validate Purchase Order against Invoice
-        # ----------------------------------------------------------
 
         invoice_vendor = (
             invoice.vendor_name or ""
@@ -179,30 +192,12 @@ class InvoiceService:
 
         mismatch_reasons = []
 
-        if invoice_vendor != po_vendor:
-            mismatch_reasons.append(
-                f"Vendor mismatch: Invoice vendor '{invoice.vendor_name}' "
-                f"does not match PO vendor '{purchase_order.vendor_name}'."
-            )
-
-        # ----------------------------------------------------------
-        # Link the validated Purchase Order
-        # ----------------------------------------------------------
-
-        invoice.procurement_purchase_order_id = purchase_order.id
-        invoice.purchase_order_number = purchase_order.po_number
-
-        # ----------------------------------------------------------
-        # Check invoice and PO mismatch
-        # ----------------------------------------------------------
-
-        mismatch_reasons = []
-
         # Vendor mismatch
         if invoice_vendor != po_vendor:
             mismatch_reasons.append(
-                f"Vendor mismatch: Invoice vendor '{invoice.vendor_name}' "
-                f"does not match PO vendor '{purchase_order.vendor_name}'."
+                f"Vendor mismatch: Invoice vendor "
+                f"'{invoice.vendor_name}' does not match PO vendor "
+                f"'{purchase_order.vendor_name}'."
             )
 
         # Amount mismatch
@@ -211,49 +206,59 @@ class InvoiceService:
 
         if invoice_total != po_total:
             mismatch_reasons.append(
-                f"Amount mismatch: Invoice total is {invoice_total}, "
-                f"but PO total is {po_total}."
+                f"Amount mismatch: Invoice total is "
+                f"{invoice_total}, but PO total is {po_total}."
             )
+
+        # Link the PO only after ownership validation
+        invoice.procurement_purchase_order_id = purchase_order.id
+        invoice.purchase_order_number = purchase_order.po_number
+
+        # Add PO Linked history
+        self.db.add(
+            InvoiceStatusLog(
+                invoice_id=invoice.id,
+                status="PO Linked",
+                remarks=(
+                    f"Invoice linked to Purchase Order "
+                    f"{purchase_order.po_number}."
+                ),
+                updated_by=str(user_id),
+            )
+        )
 
         if mismatch_reasons:
             invoice.processing_status = "Review Required"
-
-            remarks = (
-                "Invoice mismatch detected. Manual review is required. "
-                + " ".join(mismatch_reasons)
-            )
 
             self.db.add(
                 InvoiceStatusLog(
                     invoice_id=invoice.id,
                     status="Review Required",
-                    remarks=remarks,
-                    updated_by="System",
+                    remarks=(
+                        "Basic mismatch detected while linking the Purchase Order. "
+                        "Complete invoice-to-PO matching is required. "
+                        + " ".join(mismatch_reasons)
+                    ),
+                    updated_by=str(user_id),
                 )
             )
+
         else:
-            invoice.processing_status = "Matched"
+            # Do not mark the invoice as Matched here.
+            # The MatchingService must compare all header and line-item values.
+            invoice.processing_status = "PO Linked"
 
             self.db.add(
                 InvoiceStatusLog(
                     invoice_id=invoice.id,
-                    status="Matched",
-                    remarks="Invoice matched successfully with the Purchase Order.",
-                    updated_by="System",
+                    status="PO Linked",
+                    remarks=(
+                        "Invoice linked to Purchase Order. "
+                        "Complete invoice-to-PO matching is required before approval."
+                    ),
+                    updated_by=str(user_id),
                 )
             )
-
-        self.db.commit()
-        self.db.refresh(invoice)
-
-        return invoice
-
-        self.db.add(InvoiceStatusLog(
-            invoice_id=invoice.id,
-            status="PO Linked",
-            remarks=f"Invoice linked to Purchase Order {purchase_order.po_number}.",
-            updated_by="System",
-        ))
 
         self.db.commit()
         self.db.refresh(invoice)
@@ -285,63 +290,121 @@ class InvoiceService:
 
         return invoice
 
-    def send_for_approval(self, invoice_id: int) -> Invoice:
-        invoice = self.get_invoice_by_id(invoice_id)
+    def send_for_approval(
+        self,
+        invoice_id: int,
+        user_id: int,
+    ) -> Invoice:
+
+        invoice = self.get_invoice_by_id(
+            invoice_id=invoice_id,
+            user_id=user_id,
+        )
+
         if invoice is None:
-            raise HTTPException(status_code=404, detail="Invoice not found.")
+            raise HTTPException(
+                status_code=404,
+                detail="Invoice not found.",
+            )
+
         if invoice.procurement_purchase_order_id is None:
             raise HTTPException(
                 status_code=409,
-                detail="Link the invoice to a Purchase Order before approval.",
+                detail=(
+                    "Link the invoice to a Purchase Order "
+                    "before approval."
+                ),
             )
+
         if invoice.processing_status == "Approval Pending":
             return invoice
 
-        if invoice.processing_status not in {
-            "Matched",
-            "Match Override Approved",
-        }:
+        if invoice.processing_status != "Matched":
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "Only matched invoices or authorized match "
-                    "overrides can be sent for approval."
+                    "Only completely matched invoices can be sent "
+                    "for approval. Review Required invoices cannot "
+                    "be approved."
                 ),
             )
 
         invoice.processing_status = "Approval Pending"
-        self.db.add(InvoiceStatusLog(
-            invoice_id=invoice.id,
-            status="Approval Pending",
-            remarks="Invoice match was accepted and sent for approval.",
-            updated_by="System",
-        ))
+
+        self.db.add(
+            InvoiceStatusLog(
+                invoice_id=invoice.id,
+                status="Approval Pending",
+                remarks=(
+                    "Invoice completely matched with the Purchase Order "
+                    "and sent for approval."
+                ),
+                updated_by="System",
+            )
+        )
+
         self.db.commit()
         self.db.refresh(invoice)
+
         return invoice
 
 
-    def get_invoice_line_items(self, invoice_id: int):
+    def get_invoice_line_items(
+        self,
+        invoice_id: int,
+        user_id: int,
+    ):
+        invoice = self.get_invoice_by_id(
+            invoice_id=invoice_id,
+            user_id=user_id,
+        )
+
+        if invoice is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Invoice not found.",
+            )
+
         return (
             self.db.query(InvoiceLineItem)
-            .filter(InvoiceLineItem.invoice_id == invoice_id)
+            .filter(
+                InvoiceLineItem.invoice_id == invoice_id,
+            )
             .all()
         )
 
 
-    def get_invoice_status_logs(self, invoice_id: int):
+    def get_invoice_status_logs(
+        self,
+        invoice_id: int,
+        user_id: int,
+    ):
+        invoice = self.get_invoice_by_id(
+            invoice_id=invoice_id,
+            user_id=user_id,
+        )
+
+        if invoice is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Invoice not found.",
+            )
+
         return (
             self.db.query(InvoiceStatusLog)
-            .filter(InvoiceStatusLog.invoice_id == invoice_id)
+            .filter(
+                InvoiceStatusLog.invoice_id == invoice_id,
+            )
             .order_by(InvoiceStatusLog.created_at.asc())
             .all()
         )
 
-    def search_invoices(self, query: str):
+    def search_invoices(self, query: str, user_id: int):
         """
-        Search invoices in SQLite by number, vendor, customer, status, PO, dates, etc.
+        Search only the current user's invoices.
         """
         term = (query or "").strip()
+
         if not term:
             return []
 
@@ -350,6 +413,7 @@ class InvoiceService:
         return (
             self.db.query(Invoice)
             .filter(
+                Invoice.user_id == user_id,
                 or_(
                     Invoice.invoice_number.ilike(like),
                     Invoice.vendor_name.ilike(like),
@@ -360,7 +424,6 @@ class InvoiceService:
                     Invoice.invoice_date.ilike(like),
                     Invoice.due_date.ilike(like),
                     Invoice.currency.ilike(like),
-                    # Also match numeric amount if user types a number
                     cast(Invoice.total_amount, String).ilike(like),
                     cast(Invoice.subtotal, String).ilike(like),
                 )
@@ -369,7 +432,11 @@ class InvoiceService:
             .all()
         )
 
-    def search_invoices_by_number(self, invoice_number: str):
+    def search_invoices_by_number(
+        self,
+        invoice_number: str,
+        user_id: int,
+    ):
         term = (invoice_number or "").strip()
         if not term:
             return []
@@ -377,12 +444,19 @@ class InvoiceService:
         like = f"%{term}%"
         return (
             self.db.query(Invoice)
-            .filter(Invoice.invoice_number.ilike(like))
+            .filter(
+                Invoice.user_id == user_id,
+                Invoice.invoice_number.ilike(like),
+            )
             .order_by(Invoice.id.desc())
             .all()
         )
 
-    def search_invoices_by_vendor(self, vendor_name: str):
+    def search_invoices_by_vendor(
+        self,
+        vendor_name: str,
+        user_id: int,
+    ):
         term = (vendor_name or "").strip()
         if not term:
             return []
@@ -390,7 +464,10 @@ class InvoiceService:
         like = f"%{term}%"
         return (
             self.db.query(Invoice)
-            .filter(Invoice.vendor_name.ilike(like))
+            .filter(
+                Invoice.user_id == user_id,
+                Invoice.vendor_name.ilike(like),
+            )
             .order_by(Invoice.id.desc())
             .all()
         )

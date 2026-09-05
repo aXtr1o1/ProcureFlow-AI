@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
     getInvoice,
+  getInvoicePreviewUrl,
 } from "@/services/api";
 import { fmtDate } from "@/lib/invoices";
 import { formatUsd } from "@/lib/currency";
@@ -39,6 +40,7 @@ export default function InvoiceValidationPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [invoice, setInvoice] = useState<Invoice | null | undefined>(undefined);
+  const [invoicePreviewUrl, setInvoicePreviewUrl] = useState<string | null>(null);
   const [flagged, setFlagged] = useState(false);
   const [showFlagMessage, setShowFlagMessage] = useState(false);
 
@@ -54,6 +56,22 @@ export default function InvoiceValidationPage() {
 
       loadInvoice();
   }, [params.id]);
+
+  useEffect(() => {
+    if (!invoice?.blob_name) return;
+
+    let previewUrl: string | null = null;
+    getInvoicePreviewUrl(invoice.blob_name)
+      .then((url) => {
+        previewUrl = url;
+        setInvoicePreviewUrl(url);
+      })
+      .catch((error) => console.error("Failed to load invoice preview:", error));
+
+    return () => {
+      if (previewUrl) window.URL.revokeObjectURL(previewUrl);
+    };
+  }, [invoice?.blob_name]);
   if (invoice === undefined) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-surface">
@@ -268,7 +286,7 @@ export default function InvoiceValidationPage() {
             </div>
 
             <iframe
-              src={`${process.env.NEXT_PUBLIC_API_URL}/invoices/${invoice.blob_name}`}
+              src={invoicePreviewUrl ?? undefined}
               title="Original Invoice"
               className="w-full h-[800px] border-0"
             />
