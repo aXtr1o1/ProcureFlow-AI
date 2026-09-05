@@ -1,7 +1,10 @@
-from datetime import datetime
-from typing import Dict, Optional
+import re
+from datetime import datetime, timedelta
+from typing import Dict
 
-from sqlalchemy import func, extract
+from collections import defaultdict
+
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 
 from fastapi import HTTPException
@@ -246,7 +249,7 @@ class DashboardService:
             "Pending Approval",
         ]
 
-        pending_invoices = (
+        pending_invoices_query = (
             self.db.query(
                 func.count(Invoice.id)
             )
@@ -255,15 +258,27 @@ class DashboardService:
                     pending_invoice_statuses
                 )
             )
-            .scalar()
+        )
+
+        pending_invoices_query = self._apply_user_filter(
+            pending_invoices_query,
+            Invoice,
+        )
+
+        pending_invoices = (
+            pending_invoices_query.scalar()
             or 0
         )
 
         # ------------------------------------------------------
         # Matched invoices
         # ------------------------------------------------------
+        #
+        # Count only matched invoices belonging to the
+        # authenticated user.
+        # ------------------------------------------------------
 
-        matched_invoices = (
+        matched_invoices_query = (
             self.db.query(
                 func.count(
                     func.distinct(
@@ -271,16 +286,24 @@ class DashboardService:
                     )
                 )
             )
+            .join(
+                Invoice,
+                Invoice.id == InvoiceMatchRun.invoice_id,
+            )
             .filter(
+                Invoice.user_id == self.user_id,
                 InvoiceMatchRun.status.in_(
                     [
                         "Matched",
                         "Success",
                         "Successful",
                     ]
-                )
+                ),
             )
-            .scalar()
+        )
+
+        matched_invoices = (
+            matched_invoices_query.scalar()
             or 0
         )
 
@@ -288,16 +311,27 @@ class DashboardService:
         # Exceptions
         # ------------------------------------------------------
 
-        open_exceptions = (
+        open_exceptions_query = (
             self.db.query(
-                func.count(
-                    InvoiceException.id
-                )
+                func.count(InvoiceException.id)
+            )
+            .join(
+                Invoice,
+                Invoice.id == InvoiceException.invoice_id,
             )
             .filter(
-                InvoiceException.status == "Open"
+                Invoice.user_id == self.user_id,
+                InvoiceException.status == "Open",
             )
-            .scalar()
+        )
+
+        open_exceptions_query = self._apply_user_filter(
+            open_exceptions_query,
+            Invoice,
+        )
+
+        open_exceptions = (
+            open_exceptions_query.scalar()
             or 0
         )
 
@@ -314,7 +348,7 @@ class DashboardService:
         # Pending approval value
         # ------------------------------------------------------
 
-        pending_approval_value = (
+        pending_approval_query = (
             self.db.query(
                 func.coalesce(
                     func.sum(
@@ -327,7 +361,15 @@ class DashboardService:
                 ProcurementPurchaseOrder.status
                 == "Pending Approval"
             )
-            .scalar()
+        )
+
+        pending_approval_query = self._apply_user_filter(
+            pending_approval_query,
+            ProcurementPurchaseOrder,
+        )
+
+        pending_approval_value = (
+            pending_approval_query.scalar()
             or 0
         )
 
@@ -335,7 +377,7 @@ class DashboardService:
         # Overdue payments
         # ------------------------------------------------------
 
-        overdue_payments = (
+        overdue_payments_query = (
             self.db.query(
                 func.coalesce(
                     func.sum(Payment.amount),
@@ -344,11 +386,18 @@ class DashboardService:
             )
             .filter(
                 Payment.due_date.isnot(None),
-                Payment.due_date
-                < datetime.utcnow(),
+                Payment.due_date < datetime.utcnow(),
                 Payment.status != "Paid",
             )
-            .scalar()
+        )
+
+        overdue_payments_query = self._apply_user_filter(
+            overdue_payments_query,
+            Payment,
+        )
+
+        overdue_payments = (
+            overdue_payments_query.scalar()
             or 0
         )
 
@@ -423,16 +472,28 @@ class DashboardService:
             Payment
         )
 
-        total_exceptions = (
+        total_exceptions_query = (
             self.db.query(
                 func.count(
                     InvoiceException.id
                 )
             )
+            .join(
+                Invoice,
+                Invoice.id == InvoiceException.invoice_id,
+            )
             .filter(
                 InvoiceException.status == "Open"
             )
-            .scalar()
+        )
+
+        total_exceptions_query = self._apply_user_filter(
+            total_exceptions_query,
+            Invoice,
+        )
+
+        total_exceptions = (
+            total_exceptions_query.scalar()
             or 0
         )
 
@@ -446,7 +507,7 @@ class DashboardService:
             Invoice.total_amount,
         )
 
-        total_paid_amount = (
+        total_paid_amount_query = (
             self.db.query(
                 func.coalesce(
                     func.sum(Payment.amount),
@@ -456,24 +517,21 @@ class DashboardService:
             .filter(
                 Payment.status == "Paid"
             )
-            .scalar()
+        )
+
+        total_paid_amount_query = self._apply_user_filter(
+            total_paid_amount_query,
+            Payment,
+        )
+
+        total_paid_amount = (
+            total_paid_amount_query.scalar()
             or 0
         )
 
         total_pending_payment = (
-            self.db.query(
-                func.coalesce(
-                    func.sum(Payment.amount),
-                    0,
-                )
-            )
-            .filter(
-                Payment.status == "Pending"
-            )
-            .scalar()
-            or 0
+            self._get_pending_payment_value()
         )
-
         return {
             "total_business_needs":
                 int(total_business_needs),
@@ -576,7 +634,7 @@ class DashboardService:
             status_column is not None
             and pending_statuses
         ):
-            pending = (
+            pending_query = (
                 self.db.query(
                     func.count(model.id)
                 )
@@ -585,7 +643,15 @@ class DashboardService:
                         pending_statuses
                     )
                 )
-                .scalar()
+            )
+
+            pending_query = self._apply_user_filter(
+                pending_query,
+                model,
+            )
+
+            pending = (
+                pending_query.scalar()
                 or 0
             )
 
@@ -693,117 +759,294 @@ class DashboardService:
     # PO Intelligence
     # ==========================================================
 
-    def get_po_intelligence(self) -> dict:
+    def get_po_intelligence(self) -> Dict:
+        """
+        Return PO intelligence metrics for the authenticated user's data.
+        """
 
-        total_pos = self._count(
-            ProcurementPurchaseOrder
+        if self.user_id is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Authenticated user is required",
+            )
+
+        # Base PO query restricted to the authenticated user's PRs
+        po_query = (
+            self.db.query(ProcurementPurchaseOrder)
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.requester_id == self.user_id
+            )
         )
 
-        po_value = self._sum(
-            ProcurementPurchaseOrder,
-            ProcurementPurchaseOrder.total_amount,
+        # Basic PO metrics
+        total_pos = po_query.count()
+
+        po_value = (
+            po_query.with_entities(
+                func.coalesce(
+                    func.sum(ProcurementPurchaseOrder.total_amount),
+                    0,
+                )
+            )
+            .scalar()
+            or 0
         )
+
+        # Status counts
+        def get_po_status_count(status: str) -> int:
+            return (
+                self.db.query(func.count(ProcurementPurchaseOrder.id))
+                .join(
+                    PurchaseRequisition,
+                    ProcurementPurchaseOrder.purchase_requisition_id
+                    == PurchaseRequisition.id,
+                )
+                .filter(
+                    PurchaseRequisition.requester_id == self.user_id,
+                    ProcurementPurchaseOrder.status == status,
+                )
+                .scalar()
+                or 0
+            )
 
         open_statuses = [
-            "Created",
+            "Draft",
             "Pending Approval",
+            "Approval Pending",
             "Approved",
-            "Sent",
-            "Vendor Accepted",
-            "Acknowledged",
+            "Partially Received",
         ]
 
         open_pos = (
-            self.db.query(
-                func.count(
-                    ProcurementPurchaseOrder.id
-                )
+            self.db.query(func.count(ProcurementPurchaseOrder.id))
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
             )
             .filter(
-                ProcurementPurchaseOrder.status.in_(
-                    open_statuses
-                )
+                PurchaseRequisition.requester_id == self.user_id,
+                ProcurementPurchaseOrder.status.in_(open_statuses),
             )
             .scalar()
             or 0
         )
 
-        closed_pos = (
-            self.db.query(
-                func.count(
-                    ProcurementPurchaseOrder.id
-                )
-            )
-            .filter(
-                ProcurementPurchaseOrder.status
-                == "Closed"
-            )
-            .scalar()
-            or 0
-        )
+        closed_pos = get_po_status_count("Closed")
+        cancelled_pos = get_po_status_count("Cancelled")
 
-        cancelled_pos = (
-            self.db.query(
-                func.count(
-                    ProcurementPurchaseOrder.id
-                )
-            )
-            .filter(
-                ProcurementPurchaseOrder.status
-                == "Cancelled"
-            )
-            .scalar()
-            or 0
-        )
-
+        # Pending approvals for the user's POs
         pending_approvals = (
-            self.db.query(
-                func.count(
-                    ProcurementPurchaseOrder.id
-                )
+            self.db.query(func.count(PurchaseOrderApproval.id))
+            .join(
+                ProcurementPurchaseOrder,
+                PurchaseOrderApproval.purchase_order_id
+                == ProcurementPurchaseOrder.id,
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
             )
             .filter(
-                ProcurementPurchaseOrder.status
-                == "Pending Approval"
+                PurchaseRequisition.requester_id == self.user_id,
+                PurchaseOrderApproval.decision == "Pending",
             )
             .scalar()
             or 0
         )
 
-        invoice_count = self._count(Invoice)
+        # Average PO creation time:
+        # Purchase Requisition creation -> PO creation
+        average_po_creation_time = (
+            self.db.query(
+                func.avg(
+                    func.extract(
+                        "epoch",
+                        ProcurementPurchaseOrder.created_at
+                        - PurchaseRequisition.created_at,
+                    )
+                )
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.requester_id == self.user_id,
+                ProcurementPurchaseOrder.created_at.isnot(None),
+                PurchaseRequisition.created_at.isnot(None),
+            )
+            .scalar()
+        )
 
-        conversion_ratio = (
-            (invoice_count / total_pos) * 100
+        # Average PO approval time:
+        # PO creation -> approval decision
+        average_po_approval_time = (
+            self.db.query(
+                func.avg(
+                    func.extract(
+                        "epoch",
+                        PurchaseOrderApproval.decided_at
+                        - ProcurementPurchaseOrder.created_at,
+                    )
+                )
+            )
+            .join(
+                ProcurementPurchaseOrder,
+                PurchaseOrderApproval.purchase_order_id
+                == ProcurementPurchaseOrder.id,
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.requester_id == self.user_id,
+                PurchaseOrderApproval.decision == "Approved",
+                PurchaseOrderApproval.decided_at.isnot(None),
+                ProcurementPurchaseOrder.created_at.isnot(None),
+            )
+            .scalar()
+        )
+
+        # PO-to-invoice conversion ratio
+        po_linked_invoices = (
+            self.db.query(func.count(func.distinct(Invoice.id)))
+            .join(
+                ProcurementPurchaseOrder,
+                Invoice.procurement_purchase_order_id
+                == ProcurementPurchaseOrder.id,
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.requester_id == self.user_id,
+                Invoice.procurement_purchase_order_id.isnot(None),
+            )
+            .scalar()
+            or 0
+        )
+
+        po_to_invoice_conversion_ratio = (
+            (po_linked_invoices / total_pos) * 100
             if total_pos
             else 0
         )
 
-        return {
-            "total_pos": int(total_pos),
-            "po_value": float(po_value),
+        # Average aging of open POs
+        average_po_aging = (
+            self.db.query(
+                func.avg(
+                    func.extract(
+                        "epoch",
+                        func.now() - ProcurementPurchaseOrder.created_at,
+                    )
+                )
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.requester_id == self.user_id,
+                ProcurementPurchaseOrder.status.in_(open_statuses),
+                ProcurementPurchaseOrder.created_at.isnot(None),
+            )
+            .scalar()
+        )
 
-            "open_pos": int(open_pos),
-            "closed_pos": int(closed_pos),
-            "cancelled_pos": int(cancelled_pos),
-
-            "pending_approvals":
-                int(pending_approvals),
-
-            "average_po_creation_time": None,
-            "average_po_approval_time": None,
-
-            "po_to_invoice_conversion_ratio":
-                round(
-                    float(conversion_ratio),
-                    2,
+        # PO value by department
+        po_value_by_department_rows = (
+            self.db.query(
+                PurchaseRequisition.department,
+                func.coalesce(
+                    func.sum(ProcurementPurchaseOrder.total_amount),
+                    0,
                 ),
+            )
+            .join(
+                ProcurementPurchaseOrder,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.requester_id == self.user_id
+            )
+            .group_by(PurchaseRequisition.department)
+            .all()
+        )
 
-            "average_po_aging": None,
+        po_value_by_department = {
+            department or "Unknown": float(value or 0)
+            for department, value in po_value_by_department_rows
+        }
 
-            # These require confirmed dimension
-            # columns in the current PO model.
-            "po_value_by_department": {},
-            "po_value_by_vendor": {},
+        # PO value by vendor
+        po_value_by_vendor_rows = (
+            self.db.query(
+                ProcurementPurchaseOrder.vendor_name,
+                func.coalesce(
+                    func.sum(ProcurementPurchaseOrder.total_amount),
+                    0,
+                ),
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.requester_id == self.user_id
+            )
+            .group_by(ProcurementPurchaseOrder.vendor_name)
+            .all()
+        )
+
+        po_value_by_vendor = {
+            vendor or "Unknown": float(value or 0)
+            for vendor, value in po_value_by_vendor_rows
+        }
+
+        return {
+            "total_pos": total_pos,
+            "po_value": float(po_value),
+            "open_pos": open_pos,
+            "closed_pos": closed_pos,
+            "cancelled_pos": cancelled_pos,
+            "pending_approvals": pending_approvals,
+            "average_po_creation_time": (
+                float(average_po_creation_time)
+                if average_po_creation_time is not None
+                else 0
+            ),
+            "average_po_approval_time": (
+                float(average_po_approval_time)
+                if average_po_approval_time is not None
+                else 0
+            ),
+            "po_to_invoice_conversion_ratio": round(
+                po_to_invoice_conversion_ratio,
+                2,
+            ),
+            "average_po_aging": (
+                float(average_po_aging)
+                if average_po_aging is not None
+                else 0
+            ),
+            "po_value_by_department": po_value_by_department,
+            "po_value_by_vendor": po_value_by_vendor,
         }
 
     # ==========================================================
@@ -814,7 +1057,7 @@ class DashboardService:
 
         total_invoices = self._count(Invoice)
 
-        successfully_extracted = (
+        successfully_extracted_query = (
             self.db.query(
                 func.count(Invoice.id)
             )
@@ -826,11 +1069,19 @@ class DashboardService:
                     ]
                 )
             )
-            .scalar()
+        )
+
+        successfully_extracted_query = self._apply_user_filter(
+            successfully_extracted_query,
+            Invoice,
+        )
+
+        successfully_extracted = (
+            successfully_extracted_query.scalar()
             or 0
         )
 
-        extraction_failed = (
+        extraction_failed_query = (
             self.db.query(
                 func.count(Invoice.id)
             )
@@ -842,11 +1093,19 @@ class DashboardService:
                     ]
                 )
             )
-            .scalar()
+        )
+
+        extraction_failed_query = self._apply_user_filter(
+            extraction_failed_query,
+            Invoice,
+        )
+
+        extraction_failed = (
+            extraction_failed_query.scalar()
             or 0
         )
 
-        matched = (
+        matched_query = (
             self.db.query(
                 func.count(
                     func.distinct(
@@ -854,29 +1113,76 @@ class DashboardService:
                     )
                 )
             )
+            .join(
+                Invoice,
+                Invoice.id == InvoiceMatchRun.invoice_id,
+            )
             .filter(
+                Invoice.user_id == self.user_id,
                 InvoiceMatchRun.status.in_(
                     [
                         "Matched",
                         "Success",
                         "Successful",
                     ]
-                )
+                ),
             )
-            .scalar()
+        )
+
+        matched = (
+            matched_query.scalar()
             or 0
         )
 
-        exception_count = (
+        # --------------------------------------------------
+        # PO-linked invoices
+        # --------------------------------------------------
+        #
+        # An invoice is PO-linked when it references a
+        # purchase order directly, regardless of whether a
+        # match run has been performed yet.
+        # --------------------------------------------------
+
+        po_linked_invoices_query = (
             self.db.query(
-                func.count(
-                    InvoiceException.id
-                )
+                func.count(Invoice.id)
+            )
+            .filter(
+                Invoice.user_id == self.user_id,
+                Invoice.procurement_purchase_order_id.isnot(None),
+            )
+        )
+
+        po_linked_invoices_query = self._apply_user_filter(
+            po_linked_invoices_query,
+            Invoice,
+        )
+
+        po_linked_invoices = (
+            po_linked_invoices_query.scalar()
+            or 0
+        )
+
+        exception_count_query = (
+            self.db.query(
+                func.count(InvoiceException.id)
+            )
+            .join(
+                Invoice,
+                Invoice.id == InvoiceException.invoice_id,
             )
             .filter(
                 InvoiceException.status == "Open"
             )
-            .scalar()
+        )
+
+        exception_count_query = self._apply_user_filter(
+            exception_count_query,
+            Invoice,
+        )
+
+        exception_count = (
+            exception_count_query.scalar()
             or 0
         )
 
@@ -907,12 +1213,12 @@ class DashboardService:
                 0,
 
             "po_linked_invoices":
-                int(matched),
+                int(po_linked_invoices),
 
             "non_po_invoices":
                 max(
                     0,
-                    total_invoices - matched,
+                    total_invoices - po_linked_invoices,
                 ),
 
             "processing_time":
@@ -946,8 +1252,15 @@ class DashboardService:
 
     def get_vendor_intelligence(self) -> dict:
         """
-        Build vendor analytics from actual PO and invoice records.
+        Build vendor analytics from the authenticated user's
+        purchase orders, invoices, goods receipts and exceptions.
         """
+
+        if self.user_id is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Authenticated user is required.",
+            )
 
         # ------------------------------------------------------
         # Purchase Orders grouped by vendor
@@ -956,16 +1269,24 @@ class DashboardService:
         po_rows = (
             self.db.query(
                 ProcurementPurchaseOrder.vendor_name,
-                func.count(ProcurementPurchaseOrder.id),
+                func.count(
+                    ProcurementPurchaseOrder.id
+                ).label("po_count"),
                 func.coalesce(
                     func.sum(
                         ProcurementPurchaseOrder.total_amount
                     ),
                     0,
-                ),
+                ).label("po_spend"),
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
             )
             .filter(
-                ProcurementPurchaseOrder.vendor_name.isnot(None)
+                PurchaseRequisition.requester_id == self.user_id,
+                ProcurementPurchaseOrder.vendor_name.isnot(None),
             )
             .group_by(
                 ProcurementPurchaseOrder.vendor_name
@@ -980,18 +1301,25 @@ class DashboardService:
         invoice_rows = (
             self.db.query(
                 Invoice.vendor_name,
-                func.count(Invoice.id),
+                func.count(
+                    Invoice.id
+                ).label("invoice_count"),
                 func.coalesce(
-                    func.sum(Invoice.total_amount),
+                    func.sum(
+                        Invoice.total_amount
+                    ),
                     0,
-                ),
+                ).label("invoice_spend"),
                 func.coalesce(
-                    func.avg(Invoice.total_amount),
+                    func.avg(
+                        Invoice.total_amount
+                    ),
                     0,
-                ),
+                ).label("average_invoice_value"),
             )
             .filter(
-                Invoice.vendor_name.isnot(None)
+                Invoice.user_id == self.user_id,
+                Invoice.vendor_name.isnot(None),
             )
             .group_by(
                 Invoice.vendor_name
@@ -999,60 +1327,136 @@ class DashboardService:
             .all()
         )
 
-        po_data = {
-            vendor: {
-                "number_of_pos": int(po_count),
-                "po_spend": float(po_spend),
-            }
-            for vendor, po_count, po_spend in po_rows
-            if vendor
-        }
+        # ------------------------------------------------------
+        # Normalize vendor names
+        # ------------------------------------------------------
 
-        invoice_data = {
-            vendor: {
-                "number_of_invoices": int(invoice_count),
-                "invoice_spend": float(invoice_spend),
-                "average_invoice_value": float(
-                    average_invoice_value or 0
-                ),
-            }
-            for (
-                vendor,
-                invoice_count,
-                invoice_spend,
-                average_invoice_value,
-            ) in invoice_rows
-            if vendor
-        }
+        def normalize_vendor_name(value: str | None) -> str:
+            """
+            Normalize vendor names for display and grouping.
 
-        vendor_names = set(po_data) | set(invoice_data)
+            Handles:
+            - None values
+            - Leading/trailing spaces
+            - Multiple spaces
+            - Non-breaking spaces
+            - Case differences
+            """
+            if value is None:
+                return ""
+
+            value = str(value).replace("\u00A0", " ")
+
+            return re.sub(r"\s+", " ", value).strip()
+
+        def vendor_group_key(value: str | None) -> str:
+            """
+            Create a consistent key for grouping vendors.
+            """
+            normalized_name = normalize_vendor_name(value)
+
+            return normalized_name.casefold()
+
+        po_data = {}
+
+        for vendor, po_count, po_spend in po_rows:
+            vendor_name = normalize_vendor_name(vendor)
+
+            if not vendor_name:
+                continue
+
+            vendor_key = vendor_group_key(vendor)
+
+            if vendor_key not in po_data:
+                po_data[vendor_key] = {
+                    "vendor_name": vendor_name,
+                    "number_of_pos": 0,
+                    "po_spend": 0.0,
+                }
+
+            po_data[vendor_key]["number_of_pos"] += int(
+                po_count or 0
+            )
+
+            po_data[vendor_key]["po_spend"] += float(
+                po_spend or 0
+            )
+
+        invoice_data = {}
+
+        for (
+            vendor,
+            invoice_count,
+            invoice_spend,
+            average_invoice_value,
+        ) in invoice_rows:
+
+            vendor_name = normalize_vendor_name(vendor)
+
+            if not vendor_name:
+                continue
+
+            vendor_key = vendor_group_key(vendor)
+
+            if vendor_key not in invoice_data:
+                invoice_data[vendor_key] = {
+                    "vendor_name": vendor_name,
+                    "number_of_invoices": 0,
+                    "invoice_spend": 0.0,
+                    "average_invoice_value": 0.0,
+                }
+
+            invoice_data[vendor_key]["number_of_invoices"] += int(
+                invoice_count or 0
+            )
+
+            invoice_data[vendor_key]["invoice_spend"] += float(
+                invoice_spend or 0
+            )
+
+            invoice_data[vendor_key]["average_invoice_value"] = (
+                invoice_data[vendor_key]["invoice_spend"]
+                / invoice_data[vendor_key]["number_of_invoices"]
+                if invoice_data[vendor_key]["number_of_invoices"]
+                else 0.0
+            )
+
+        vendor_keys = sorted(set(po_data.keys()) | set(invoice_data.keys()))
 
         vendors = []
 
-        for vendor_name in sorted(vendor_names):
+        for vendor_key in vendor_keys:
 
             po = po_data.get(
-                vendor_name,
+                vendor_key,
                 {
+                    "vendor_name": vendor_key,
                     "number_of_pos": 0,
                     "po_spend": 0.0,
                 },
             )
 
             invoice = invoice_data.get(
-                vendor_name,
+                vendor_key,
                 {
+                    "vendor_name": po["vendor_name"],
                     "number_of_invoices": 0,
                     "invoice_spend": 0.0,
                     "average_invoice_value": 0.0,
                 },
             )
 
+            vendor_name = (
+                po.get("vendor_name")
+                or invoice.get("vendor_name")
+                or vendor_key
+            )
+
             # --------------------------------------------------
-            # Exception count
+            # Vendor invoice exceptions
             # --------------------------------------------------
 
-            exception_count = (
+            exception_count_query = (
                 self.db.query(
                     func.count(
                         func.distinct(
@@ -1062,21 +1466,54 @@ class DashboardService:
                 )
                 .join(
                     Invoice,
-                    Invoice.id
-                    == InvoiceException.invoice_id,
+                    Invoice.id == InvoiceException.invoice_id,
                 )
                 .filter(
-                    Invoice.vendor_name
-                    == vendor_name,
+                    Invoice.user_id == self.user_id,
                     InvoiceException.status == "Open",
+                    func.lower(
+                        func.trim(Invoice.vendor_name)
+                    ) == vendor_key,
                 )
-                .scalar()
+            )
+
+            exception_count = int(
+                exception_count_query.scalar()
                 or 0
             )
 
-            invoice_count = invoice[
-                "number_of_invoices"
-            ]
+            invoice_count = int(
+                invoice["number_of_invoices"]
+            )
+
+            # --------------------------------------------------
+            # Invoice accuracy
+            # --------------------------------------------------
+            #
+            # Accuracy is based on invoices without open
+            # exceptions.
+            #
+            # Accurate invoices =
+            # Total invoices - invoices with open exceptions
+            #
+            # Clamped to [0, 100] so a vendor can never show
+            # above 100% or below 0%.
+            # --------------------------------------------------
+
+            invoice_accuracy = (
+                max(
+                    0,
+                    min(
+                        100,
+                        (
+                            (invoice_count - exception_count)
+                            / invoice_count
+                        ) * 100,
+                    ),
+                )
+                if invoice_count
+                else 0.0
+            )
 
             exception_rate = (
                 (
@@ -1084,64 +1521,290 @@ class DashboardService:
                     / invoice_count
                 ) * 100
                 if invoice_count
-                else 0
+                else 0.0
             )
 
             # --------------------------------------------------
-            # Price variance
+            # PO compliance
+            # --------------------------------------------------
+            #
+            # An invoice is PO-compliant when it is linked to a
+            # purchase order.
+            #
+            # PO Compliance =
+            # PO-linked invoices / Total vendor invoices * 100
             # --------------------------------------------------
 
-            price_variance = (
+            po_linked_invoice_count = (
                 self.db.query(
-                    func.coalesce(
-                        func.sum(
-                            PurchaseRequisition.price_variance
-                        ),
-                        0,
-                    )
+                    func.count(Invoice.id)
                 )
                 .join(
                     ProcurementPurchaseOrder,
+                    Invoice.procurement_purchase_order_id
+                    == ProcurementPurchaseOrder.id,
+                )
+                .join(
+                    PurchaseRequisition,
                     ProcurementPurchaseOrder.purchase_requisition_id
                     == PurchaseRequisition.id,
                 )
                 .filter(
-                    ProcurementPurchaseOrder.vendor_name
-                    == vendor_name
+                    Invoice.user_id == self.user_id,
+                    PurchaseRequisition.requester_id == self.user_id,
+                    Invoice.procurement_purchase_order_id.isnot(None),
+                    func.lower(
+                        func.trim(Invoice.vendor_name)
+                    ) == vendor_key,
                 )
                 .scalar()
                 or 0
             )
 
+            po_compliance = (
+                max(
+                    0,
+                    min(
+                        100,
+                        (
+                            po_linked_invoice_count
+                            / invoice_count
+                        ) * 100,
+                    ),
+                )
+                if invoice_count
+                else 0.0
+            )
+
+            # --------------------------------------------------
+            # Price variance
+            # --------------------------------------------------
+            #
+            # Price Variance Percentage =
+            # ((Invoice Amount - PO Amount) / PO Amount) * 100
+            #
+            # Positive value = invoice is higher than PO
+            # Negative value = invoice is lower than PO
+            # --------------------------------------------------
+
+            po_amount_query = (
+                self.db.query(
+                    func.coalesce(
+                        func.sum(
+                            ProcurementPurchaseOrder.total_amount
+                        ),
+                        0,
+                    )
+                )
+                .join(
+                    PurchaseRequisition,
+                    ProcurementPurchaseOrder.purchase_requisition_id
+                    == PurchaseRequisition.id,
+                )
+                .filter(
+                    PurchaseRequisition.requester_id == self.user_id,
+                    func.lower(
+                        func.trim(ProcurementPurchaseOrder.vendor_name)
+                    ) == vendor_key,
+                )
+            )
+
+            po_amount = float(
+                po_amount_query.scalar()
+                or 0
+            )
+
+            invoice_amount_query = (
+                self.db.query(
+                    func.coalesce(
+                        func.sum(Invoice.total_amount),
+                        0,
+                    )
+                )
+                .join(
+                    ProcurementPurchaseOrder,
+                    Invoice.procurement_purchase_order_id
+                    == ProcurementPurchaseOrder.id,
+                )
+                .join(
+                    PurchaseRequisition,
+                    ProcurementPurchaseOrder.purchase_requisition_id
+                    == PurchaseRequisition.id,
+                )
+                .filter(
+                    Invoice.user_id == self.user_id,
+                    PurchaseRequisition.requester_id == self.user_id,
+                    Invoice.procurement_purchase_order_id.isnot(None),
+                    func.lower(
+                        func.trim(ProcurementPurchaseOrder.vendor_name)
+                    ) == vendor_key,
+                )
+            )
+
+            invoice_amount = float(
+                invoice_amount_query.scalar()
+                or 0
+            )
+
+            price_variance = (
+                (
+                    invoice_amount - po_amount
+                )
+                / po_amount
+            ) * 100 if po_amount else None
+
+            # --------------------------------------------------
+            # On-time delivery
+            # --------------------------------------------------
+            #
+            # On-Time Delivery =
+            # Invoices issued on or before the expected delivery
+            # date / Total PO-linked invoices * 100
+            #
+            # Expected delivery date is calculated from:
+            # PO created date + PO delivery_days
+            #
+            # If delivery_days is not available, the metric remains None.
+            # --------------------------------------------------
+
+            on_time_delivery = None
+
+            # Confirm that the required fields exist
+            if (
+                hasattr(ProcurementPurchaseOrder, "created_at")
+                and hasattr(Invoice, "created_at")
+                and hasattr(Invoice, "procurement_purchase_order_id")
+                and hasattr(ProcurementPurchaseOrder, "delivery_days")
+            ):
+
+                delivery_rows = (
+                    self.db.query(
+                        ProcurementPurchaseOrder.created_at,
+                        ProcurementPurchaseOrder.delivery_days,
+                        Invoice.created_at.label("invoice_created_at"),
+                    )
+                    .join(
+                        Invoice,
+                        Invoice.procurement_purchase_order_id
+                        == ProcurementPurchaseOrder.id,
+                    )
+                    .join(
+                        PurchaseRequisition,
+                        ProcurementPurchaseOrder.purchase_requisition_id
+                        == PurchaseRequisition.id,
+                    )
+                    .filter(
+                        PurchaseRequisition.requester_id == self.user_id,
+                        Invoice.user_id == self.user_id,
+                        func.lower(
+                            func.trim(ProcurementPurchaseOrder.vendor_name)
+                        ) == vendor_key,
+                        ProcurementPurchaseOrder.created_at.isnot(None),
+                        Invoice.created_at.isnot(None),
+                        ProcurementPurchaseOrder.delivery_days.isnot(None),
+                    )
+                    .all()
+                )
+
+                total_deliveries = 0
+                on_time_deliveries = 0
+
+                for (
+                    po_created_at,
+                    delivery_days,
+                    invoice_created_at,
+                ) in delivery_rows:
+
+                    if (
+                        po_created_at is None
+                        or invoice_created_at is None
+                        or delivery_days is None
+                    ):
+                        continue
+
+                    expected_delivery_date = (
+                        po_created_at
+                        + timedelta(days=int(delivery_days))
+                    )
+
+                    total_deliveries += 1
+
+                    if invoice_created_at <= expected_delivery_date:
+                        on_time_deliveries += 1
+
+                on_time_delivery = (
+                    (
+                        on_time_deliveries
+                        / total_deliveries
+                    ) * 100
+                    if total_deliveries
+                    else None
+                )
+
+            # --------------------------------------------------
+            # Overall score
+            # --------------------------------------------------
+
+            # Use 0 when a metric is not available.
+            # This prevents the frontend from displaying empty
+            # values for vendors that do not have invoice data yet.
+
+            overall_score = (
+                (
+                    (invoice_accuracy or 0)
+                    + (po_compliance or 0)
+                    + (on_time_delivery or 0)
+                ) / 3
+)
+
+            # --------------------------------------------------
+            # Vendor response
+            # --------------------------------------------------
+
             vendors.append(
                 {
                     "vendor_name": vendor_name,
 
-                    "overall_score": None,
-
-                    "on_time_delivery": None,
-
-                    "invoice_accuracy": (
-                        (
-                            (
-                                invoice_count
-                                - exception_count
-                            )
-                            / invoice_count
-                        ) * 100
-                        if invoice_count
+                    "overall_score": (
+                        round(overall_score, 2)
+                        if overall_score is not None
                         else None
                     ),
 
-                    "po_compliance": None,
-
-                    "price_variance": float(
-                        price_variance
+                    "on_time_delivery": (
+                        round(
+                            max(
+                                0,
+                                min(100, on_time_delivery),
+                            ),
+                            2,
+                        )
+                        if on_time_delivery is not None
+                        else None
                     ),
 
-                    "exception_rate": round(
-                        float(exception_rate),
-                        2,
+                    "invoice_accuracy": (
+                        round(invoice_accuracy, 2)
+                        if invoice_accuracy is not None
+                        else None
+                    ),
+
+                    "po_compliance": (
+                        round(po_compliance, 2)
+                        if po_compliance is not None
+                        else None
+                    ),
+
+                    "price_variance": (
+                        round(float(price_variance), 2)
+                        if price_variance is not None
+                        else None
+                    ),
+
+                    "exception_rate": (
+                        round(exception_rate, 2)
+                        if exception_rate is not None
+                        else None
                     ),
 
                     "payment_dispute": None,
@@ -1155,13 +1818,11 @@ class DashboardService:
                     ),
 
                     "number_of_invoices": int(
-                        invoice_count
+                        invoice["number_of_invoices"]
                     ),
 
                     "average_invoice_value": float(
-                        invoice[
-                            "average_invoice_value"
-                        ]
+                        invoice["average_invoice_value"]
                     ),
 
                     "payment_terms": None,
@@ -1203,6 +1864,9 @@ class DashboardService:
                 ProcurementPurchaseOrder.purchase_requisition_id
                 == PurchaseRequisition.id,
             )
+            .filter(
+                PurchaseRequisition.requester_id == self.user_id
+            )
             .group_by(column)
             .all()
         )
@@ -1225,7 +1889,12 @@ class DashboardService:
         rows = self.db.query(
             ProcurementPurchaseOrder.created_at,
             ProcurementPurchaseOrder.total_amount
+        ).join(
+            PurchaseRequisition,
+            ProcurementPurchaseOrder.purchase_requisition_id
+            == PurchaseRequisition.id,
         ).filter(
+            PurchaseRequisition.requester_id == self.user_id,
             ProcurementPurchaseOrder.created_at.isnot(None)
         ).all()
 
@@ -1244,7 +1913,12 @@ class DashboardService:
         rows = self.db.query(
             ProcurementPurchaseOrder.created_at,
             ProcurementPurchaseOrder.total_amount
+        ).join(
+            PurchaseRequisition,
+            ProcurementPurchaseOrder.purchase_requisition_id
+            == PurchaseRequisition.id,
         ).filter(
+            PurchaseRequisition.requester_id == self.user_id,
             ProcurementPurchaseOrder.created_at.isnot(None)
         ).all()
 
@@ -1274,7 +1948,7 @@ class DashboardService:
             Invoice.total_amount,
         )
 
-        total_paid_amount = (
+        total_paid_amount_query = (
             self.db.query(
                 func.coalesce(
                     func.sum(Payment.amount),
@@ -1284,25 +1958,23 @@ class DashboardService:
             .filter(
                 Payment.status == "Paid"
             )
-            .scalar()
+        )
+
+        total_paid_amount_query = self._apply_user_filter(
+            total_paid_amount_query,
+            Payment,
+        )
+
+        total_paid_amount = (
+            total_paid_amount_query.scalar()
             or 0
         )
 
         total_pending_payment = (
-            self.db.query(
-                func.coalesce(
-                    func.sum(Payment.amount),
-                    0,
-                )
-            )
-            .filter(
-                Payment.status == "Pending"
-            )
-            .scalar()
-            or 0
+            self._get_pending_payment_value()
         )
 
-        total_exception_value = (
+        total_exception_value_query = (
             self.db.query(
                 func.coalesce(
                     func.sum(
@@ -1319,7 +1991,15 @@ class DashboardService:
             .filter(
                 InvoiceException.status == "Open"
             )
-            .scalar()
+        )
+
+        total_exception_value_query = self._apply_user_filter(
+            total_exception_value_query,
+            Invoice,
+        )
+
+        total_exception_value = (
+            total_exception_value_query.scalar()
             or 0
         )
 
@@ -1443,7 +2123,7 @@ class DashboardService:
         # Purchase Order Trends
         # ------------------------------------------------------
 
-        po_rows = (
+        po_rows_query = (
             self.db.query(
                 po_period.label("period"),
 
@@ -1458,6 +2138,15 @@ class DashboardService:
                     ProcurementPurchaseOrder.id
                 ).label("number_of_pos"),
             )
+        )
+
+        po_rows_query = self._apply_user_filter(
+            po_rows_query,
+            ProcurementPurchaseOrder,
+        )
+
+        po_rows = (
+            po_rows_query
             .group_by(po_period)
             .order_by(po_period)
             .all()
@@ -1467,7 +2156,7 @@ class DashboardService:
         # Invoice Trends
         # ------------------------------------------------------
 
-        invoice_rows = (
+        invoice_rows_query = (
             self.db.query(
                 invoice_period.label("period"),
 
@@ -1482,6 +2171,15 @@ class DashboardService:
                     Invoice.id
                 ).label("number_of_invoices"),
             )
+        )
+
+        invoice_rows_query = self._apply_user_filter(
+            invoice_rows_query,
+            Invoice,
+        )
+
+        invoice_rows = (
+            invoice_rows_query
             .group_by(invoice_period)
             .order_by(invoice_period)
             .all()
@@ -1491,7 +2189,7 @@ class DashboardService:
         # Payment Trends
         # ------------------------------------------------------
 
-        payment_rows = (
+        payment_rows_query = (
             self.db.query(
                 payment_period.label("period"),
 
@@ -1502,6 +2200,15 @@ class DashboardService:
                     0,
                 ).label("payment_value"),
             )
+        )
+
+        payment_rows_query = self._apply_user_filter(
+            payment_rows_query,
+            Payment,
+        )
+
+        payment_rows = (
+            payment_rows_query
             .group_by(payment_period)
             .order_by(payment_period)
             .all()
@@ -1518,6 +2225,13 @@ class DashboardService:
                 func.count(
                     InvoiceException.id
                 ).label("exceptions"),
+            )
+            .join(
+                Invoice,
+                Invoice.id == InvoiceException.invoice_id,
+            )
+            .filter(
+                Invoice.user_id == self.user_id
             )
             .group_by(exception_period)
             .order_by(exception_period)
@@ -1687,7 +2401,7 @@ class DashboardService:
             Invoice.total_amount,
         )
 
-        total_paid_amount = (
+        total_paid_amount_query = (
             self.db.query(
                 func.coalesce(
                     func.sum(Payment.amount),
@@ -1697,25 +2411,22 @@ class DashboardService:
             .filter(
                 Payment.status == "Paid"
             )
-            .scalar()
+        )
+
+        total_paid_amount_query = self._apply_user_filter(
+            total_paid_amount_query,
+            Payment,
+        )
+
+        total_paid_amount = (
+            total_paid_amount_query.scalar()
             or 0
         )
 
         total_pending_payment = (
-            self.db.query(
-                func.coalesce(
-                    func.sum(Payment.amount),
-                    0,
-                )
-            )
-            .filter(
-                Payment.status == "Pending"
-            )
-            .scalar()
-            or 0
+            self._get_pending_payment_value()
         )
-
-        total_exception_value = (
+        total_exception_value_query = (
             self.db.query(
                 func.coalesce(
                     func.sum(
@@ -1732,7 +2443,15 @@ class DashboardService:
             .filter(
                 InvoiceException.status == "Open"
             )
-            .scalar()
+        )
+
+        total_exception_value_query = self._apply_user_filter(
+            total_exception_value_query,
+            Invoice,
+        )
+
+        total_exception_value = (
+            total_exception_value_query.scalar()
             or 0
         )
 
@@ -1762,12 +2481,125 @@ class DashboardService:
         }
 
     # ==========================================================
+    # Pending Payment Helper
+    # ==========================================================
+
+    def _get_pending_payment_value(self) -> float:
+        """
+        Calculate the total pending payment value.
+
+        It first checks Payment records. If no pending Payment
+        records exist, it checks invoices whose processing status
+        is Payment Pending.
+        """
+
+        pending_payment_statuses = [
+            "Pending",
+            "Payment Pending",
+            "Pending Payment",
+            "Payment Pending Approval",
+        ]
+
+        # ------------------------------------------------------
+        # Check Payment table
+        # ------------------------------------------------------
+
+        payment_query = (
+            self.db.query(
+                func.coalesce(
+                    func.sum(Payment.amount),
+                    0,
+                )
+            )
+            .filter(
+                Payment.status.in_(
+                    pending_payment_statuses
+                )
+            )
+        )
+
+        payment_query = self._apply_user_filter(
+            payment_query,
+            Payment,
+        )
+
+        pending_payment_value = (
+            payment_query.scalar()
+            or 0
+        )
+
+        # ------------------------------------------------------
+        # Check whether pending Payment records exist
+        # ------------------------------------------------------
+
+        pending_payment_count_query = (
+            self.db.query(
+                func.count(Payment.id)
+            )
+            .filter(
+                Payment.status.in_(
+                    pending_payment_statuses
+                )
+            )
+        )
+
+        pending_payment_count_query = self._apply_user_filter(
+            pending_payment_count_query,
+            Payment,
+        )
+
+        pending_payment_count = (
+            pending_payment_count_query.scalar()
+            or 0
+        )
+
+        # ------------------------------------------------------
+        # Fallback to invoices marked as Payment Pending
+        # ------------------------------------------------------
+
+        if pending_payment_count == 0:
+
+            pending_invoice_statuses = [
+                "Payment Pending",
+                "Pending Payment",
+                "Payment Pending Approval",
+            ]
+
+            invoice_query = (
+                self.db.query(
+                    func.coalesce(
+                        func.sum(Invoice.total_amount),
+                        0,
+                    )
+                )
+                .filter(
+                    Invoice.processing_status.in_(
+                        pending_invoice_statuses
+                    )
+                )
+            )
+
+            invoice_query = self._apply_user_filter(
+                invoice_query,
+                Invoice,
+            )
+
+            pending_payment_value = (
+                invoice_query.scalar()
+                or 0
+            )
+
+        return float(
+            pending_payment_value
+        )
+
+    # ==========================================================
     # Overdue Payment Helper
     # ==========================================================
 
     def _get_overdue_payment_value(self) -> float:
 
-        value = (
+        value_query = (
             self.db.query(
                 func.coalesce(
                     func.sum(Payment.amount),
@@ -1780,7 +2612,15 @@ class DashboardService:
                 < datetime.utcnow(),
                 Payment.status != "Paid",
             )
-            .scalar()
+        )
+
+        value_query = self._apply_user_filter(
+            value_query,
+            Payment,
+        )
+
+        value = (
+            value_query.scalar()
             or 0
         )
 

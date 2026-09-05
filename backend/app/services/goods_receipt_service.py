@@ -164,11 +164,9 @@ class GoodsReceiptService:
                 self.db.query(GoodsReceiptLine)
                 .join(GoodsReceipt)
                 .filter(
-                    GoodsReceipt.purchase_order_id
-                    == purchase_order.id,
-                    GoodsReceiptLine.purchase_order_line_id
-                    == po_line.id,
-                    GoodsReceipt.status != "Rejected",
+                    GoodsReceipt.purchase_order_id == purchase_order.id,
+                    GoodsReceiptLine.purchase_order_line_id == po_line.id,
+                    GoodsReceipt.status == "Accepted",
                 )
                 .all()
             )
@@ -386,7 +384,7 @@ class GoodsReceiptService:
 
         receipt = self._get_required(
             receipt_id,
-            user_id
+            user_id,
         )
 
         allowed_transitions = {
@@ -407,13 +405,16 @@ class GoodsReceiptService:
                 f"{current_status} -> {new_status}"
             )
 
+        # ------------------------------------------------------
+        # Update receipt status
+        # ------------------------------------------------------
+
         receipt.status = new_status
 
         # ------------------------------------------------------
-        # If the Goods Receipt is accepted, check whether the
-        # complete Purchase Order quantity has been received.
-        # Close the PO only when it is fully received.
+        # Close PO only after an Accepted Goods Receipt
         # ------------------------------------------------------
+
         if new_status == "Accepted":
 
             purchase_order = (
@@ -448,17 +449,17 @@ class GoodsReceiptService:
                             == purchase_order.id,
                             GoodsReceiptLine.purchase_order_line_id
                             == po_line.id,
-                            GoodsReceipt.status != "Rejected",
+                            GoodsReceipt.status == "Accepted",
                         )
                         .all()
                     )
 
                     total_received = sum(
-                        line.received_quantity
+                        float(line.received_quantity or 0)
                         for line in existing_received
                     )
 
-                    if total_received < po_line.quantity:
+                    if total_received < float(po_line.quantity or 0):
                         fully_received = False
                         break
 
@@ -468,7 +469,11 @@ class GoodsReceiptService:
                 ):
                     purchase_order.status = "Closed"
 
-        if remarks:
+        # ------------------------------------------------------
+        # Update remarks
+        # ------------------------------------------------------
+
+        if remarks is not None:
             receipt.remarks = remarks
 
         self.db.commit()

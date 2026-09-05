@@ -165,8 +165,12 @@ class VendorIntelligenceItem(BaseModel):
     on_time_delivery: Optional[float] = None
     invoice_accuracy: Optional[float] = None
     po_compliance: Optional[float] = None
-    price_variance: float = 0.0
-    exception_rate: float = 0.0
+
+    # None means that a valid PO/invoice comparison
+    # is not available.
+    price_variance: Optional[float] = None
+
+    exception_rate: Optional[float] = None
     payment_dispute: Optional[float] = None
 
     total_spend: float = 0.0

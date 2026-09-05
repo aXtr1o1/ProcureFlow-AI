@@ -66,6 +66,7 @@ class Invoice(Base):
     __tablename__ = "invoices"
 
     id = Column(Integer, primary_key=True, index=True)
+    issue_date = Column(DateTime, nullable=True)
 
     user_id = Column(
         Integer,
@@ -736,9 +737,14 @@ class GoodsReceipt(Base):
     # Draft / Submitted / Accepted / Rejected
 
     received_by_id = Column(
-        Integer,
-        ForeignKey("users.id"),
-        nullable=False
+    Integer,
+    ForeignKey("users.id"),
+    nullable=False
+)
+
+    expected_delivery_date = Column(
+        DateTime,
+        nullable=True
     )
 
     received_date = Column(

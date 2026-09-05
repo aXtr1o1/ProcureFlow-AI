@@ -9,6 +9,7 @@ export interface DashboardOverview {
       pending: number;
       sla_breaches: number;
     };
+
     purchase_requisitions: {
       count: number;
       value: number;
@@ -16,6 +17,7 @@ export interface DashboardOverview {
       pending: number;
       sla_breaches: number;
     };
+
     purchase_orders: {
       count: number;
       value: number;
@@ -23,6 +25,7 @@ export interface DashboardOverview {
       pending: number;
       sla_breaches: number;
     };
+
     goods_receipts: {
       count: number;
       value: number;
@@ -30,6 +33,7 @@ export interface DashboardOverview {
       pending: number;
       sla_breaches: number;
     };
+
     invoices: {
       count: number;
       value: number;
@@ -37,6 +41,7 @@ export interface DashboardOverview {
       pending: number;
       sla_breaches: number;
     };
+
     payments: {
       count: number;
       value: number;
@@ -57,6 +62,7 @@ export interface DashboardOverview {
   vendor_intelligence?: {
     vendors?: Array<{
       vendor_name: string;
+
       overall_score?: number | null;
       on_time_delivery?: number | null;
       invoice_accuracy?: number | null;
@@ -64,20 +70,22 @@ export interface DashboardOverview {
       price_variance?: number | null;
       exception_rate?: number | null;
       payment_dispute?: number | null;
-      total_spend?: number;
-      number_of_pos?: number;
-      number_of_invoices?: number;
-      average_invoice_value?: number;
+
+      total_spend?: number | null;
+      number_of_pos?: number | null;
+      number_of_invoices?: number | null;
+      average_invoice_value?: number | null;
+
       payment_terms?: string | null;
       average_payment_time?: number | null;
     }>;
 
-    total_vendor_spend?: number;
-    total_vendors?: number;
+    total_vendor_spend?: number | null;
+    total_vendors?: number | null;
   };
 
   spend_analytics?: {
-    total_spend?: number;
+    total_spend?: number | null;
     by_department?: Record<string, number>;
     by_business_unit?: Record<string, number>;
     by_category?: Record<string, number>;
@@ -261,24 +269,18 @@ export async function analyzeInvoice(file: File) {
 // ==========================================================
 
 export async function getDashboardOverview(): Promise<DashboardOverview> {
-  const response = await fetch(
-    `${API_URL}/dashboard/overview`,
-    {
-      method: "GET",
-      headers: getAuthHeaders(),
-      cache: "no-store",
-    }
-  );
+  const response = await fetch(`${API_URL}/dashboard/overview`, {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+  });
 
-  const data = await response.json();
+  const data = await parseApiResponse(response);
 
   console.log("Dashboard Overview Status:", response.status);
   console.log("Dashboard Overview Response:", data);
 
-  if (response.status === 401) {
-    localStorage.removeItem("access_token");
-    throw new Error("Session expired. Please login again.");
-  }
+  handleUnauthorized(response);
 
   if (!response.ok) {
     const detail = data?.detail;
@@ -295,7 +297,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     throw new Error(message);
   }
 
-  return data;
+  return data as DashboardOverview;
 }
 
 export async function getInvoices() {
