@@ -328,23 +328,18 @@ class MatchingService:
         # Compare line items
         #
         # Matching is performed by description.
+        # Each invoice line can be used only once.
         # ------------------------------------------------------
 
-        invoice_line_map = {}
-
-        for line in invoice_lines:
-            key = " ".join(
-                (line.description or "").strip().lower().split()
-            )
-
-            invoice_line_map[key] = line
+        used_invoice_line_ids = set()
 
         for po_line in po_lines:
             invoice_line = next(
                 (
                     line
                     for line in invoice_lines
-                    if self.descriptions_match(
+                    if line.id not in used_invoice_line_ids
+                    and self.descriptions_match(
                         po_line.description,
                         line.description,
                     )
@@ -362,7 +357,13 @@ class MatchingService:
                 )
                 continue
 
+            # Mark this invoice line as already matched
+            used_invoice_line_ids.add(invoice_line.id)
+
+            # --------------------------------------------------
             # Quantity
+            # --------------------------------------------------
+
             if round(
                 po_line.quantity or 0,
                 2,
@@ -378,7 +379,9 @@ class MatchingService:
                     )
                 )
 
+            # --------------------------------------------------
             # Unit Price - compare in USD
+            # --------------------------------------------------
 
             po_line_usd = convert_invoice_amounts_to_usd(
                 {
@@ -425,7 +428,10 @@ class MatchingService:
                     )
                 )
 
+            # --------------------------------------------------
             # Amount - compare in USD
+            # --------------------------------------------------
+
             line_amount_difference = abs(
                 round(po_amount_usd or 0, 2)
                 - round(invoice_line.amount or 0, 2)
@@ -469,6 +475,20 @@ class MatchingService:
                     },
                 }
             )
+
+        # ------------------------------------------------------
+        # Detect extra invoice lines not present in the PO
+        # ------------------------------------------------------
+
+        for invoice_line in invoice_lines:
+            if invoice_line.id not in used_invoice_line_ids:
+                mismatches.append(
+                    (
+                        f"Extra Invoice Line: {invoice_line.description}",
+                        "Not Present",
+                        invoice_line.description,
+                    )
+                )
 
         # ======================================================
         # Match Score
@@ -539,19 +559,15 @@ class MatchingService:
 
                 self.db.add(mismatch)
 
-            # ==================================================
-            # Successful Match
-            # ==================================================
+            # ======================================================
+            # Update Invoice Status Based on Match Result
+            # ======================================================
 
             if is_match:
-
                 invoice.processing_status = "Matched"
 
-                # ----------------------------------------------
-                # Resolve existing open exception
-                # ----------------------------------------------
-
-                open_exception = (
+                # Resolve any previously open matching exceptions
+                open_exceptions = (
                     self.db.query(InvoiceException)
                     .filter(
                         InvoiceException.invoice_id == invoice.id,
@@ -560,21 +576,13 @@ class MatchingService:
                     .all()
                 )
 
-                for exception in open_exception:
-
+                for exception in open_exceptions:
                     exception.status = "Resolved"
-
                     exception.resolution_remarks = (
-                        "Automatically resolved by "
-                        "a successful re-match."
+                        "Automatically resolved after a successful re-match."
                     )
-
                     exception.resolved_by_id = performed_by_id
                     exception.resolved_at = datetime.utcnow()
-
-                # ----------------------------------------------
-                # Status Log
-                # ----------------------------------------------
 
                 self.db.add(
                     InvoiceStatusLog(
@@ -588,33 +596,19 @@ class MatchingService:
                     )
                 )
 
-            # ==================================================
-            # Match Failed / Review Required
-            # ==================================================
-
             else:
-
-                invoice.processing_status = (
-                    "Review Required"
-                )
-
-                # ----------------------------------------------
-                # Check existing open exception
-                # ----------------------------------------------
+                invoice.processing_status = "Review Required"
 
                 existing_exception = (
                     self.db.query(InvoiceException)
                     .filter(
-                        InvoiceException.invoice_id
-                        == invoice.id,
-                        InvoiceException.status
-                        == "Open",
+                        InvoiceException.invoice_id == invoice.id,
+                        InvoiceException.status == "Open",
                     )
                     .first()
                 )
 
                 if existing_exception is None:
-
                     exception = InvoiceException(
                         invoice_id=invoice.id,
                         purchase_order_id=purchase_order.id,
@@ -623,38 +617,25 @@ class MatchingService:
                     )
 
                     self.db.add(exception)
-
                     self.db.flush()
 
                     exception_id = exception.id
 
                 else:
-
-                    # Reuse existing open exception
-                    existing_exception.match_run_id = (
-                        match_run.id
-                    )
-
-                    exception_id = (
-                        existing_exception.id
-                    )
-
-                # ----------------------------------------------
-                # Status Log
-                # ----------------------------------------------
+                    existing_exception.match_run_id = match_run.id
+                    exception_id = existing_exception.id
 
                 self.db.add(
                     InvoiceStatusLog(
                         invoice_id=invoice.id,
                         status="Review Required",
                         remarks=(
-                            "Invoice matching completed with "
-                            "mismatches. Manual review required."
+                            "Invoice matching completed with mismatches. "
+                            "Manual review required."
                         ),
                         updated_by="System",
                     )
                 )
-
             # --------------------------------------------------
             # Commit
             # --------------------------------------------------
@@ -692,6 +673,7 @@ class MatchingService:
             "invoice_id": invoice.id,
             "po_number": purchase_order.po_number,
             "is_match": is_match,
+            "is_fully_matched": is_match,
             "match_score": score,
             "matched_details": matched_details,
             "amount_excluding_tax": {
@@ -747,8 +729,10 @@ class MatchingService:
         remarks: str | None = None,
     ):
         """
-        Approve the matching exception and send the invoice
-        to the normal invoice approval workflow.
+        Mismatch approval override is disabled.
+
+        An invoice must be completely matched before it
+        can proceed to invoice approval.
         """
 
         invoice = (
@@ -760,31 +744,10 @@ class MatchingService:
         if invoice is None:
             raise ValueError("Invoice not found.")
 
-        if invoice.processing_status != "Review Required":
-            raise ValueError(
-                "Only invoices requiring manual review can be "
-                "approved after matching."
-            )
-
-        invoice.processing_status = "Approval Pending"
-
-        self.db.add(
-            InvoiceStatusLog(
-                invoice_id=invoice.id,
-                status="Approval Pending",
-                remarks=(
-                    remarks
-                    or "Invoice mismatch manually approved. "
-                    "Invoice is now awaiting invoice approval."
-                ),
-                updated_by="System",
-            )
+        raise ValueError(
+            "Invoice cannot be approved because the "
+            "PO and invoice are not completely matched."
         )
-
-        self.db.commit()
-        self.db.refresh(invoice)
-
-        return invoice
 
     # ==========================================================
     # Reject Invoice During Match Review

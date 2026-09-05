@@ -1,122 +1,182 @@
-def test_business_need_creation():
-    """TC01 - Verify Business Need / PR creation."""
-    business_need = {
-        "title": "Office Fit-Out",
-        "type": "UNIT_FIT_OUT_INSPECTION_HANDOVER",
-    }
+import uuid
 
-    assert business_need["title"] is not None
-    assert business_need["type"] is not None
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
 
 
-def test_pr_approval():
-    """TC02 - Verify PR approval."""
-    pr_status = "Approved"
-
-    assert pr_status == "Approved"
+client = TestClient(app)
+TEST_PASSWORD = "Test@12345"
 
 
-def test_vendor_selection():
-    """TC03 - Verify vendor selection after PR approval."""
-    pr_status = "Approved"
-    vendor_selected = True
-
-    assert pr_status == "Approved"
-    assert vendor_selected is True
-
-
-def test_po_creation():
-    """TC04 - Verify PO creation from approved PR."""
-    pr_status = "Approved"
-    vendor_selected = True
-
-    po_created = pr_status == "Approved" and vendor_selected
-
-    assert po_created is True
-
-
-def test_po_approval():
-    """TC05 - Verify PO approval."""
-    po_status = "Approved"
-
-    assert po_status == "Approved"
-
-
-def test_goods_delivery_and_grn():
-    """TC06 - Verify delivery and GRN completion."""
-    delivery_status = "Delivered"
-    grn_status = "Completed"
-
-    assert delivery_status == "Delivered"
-    assert grn_status == "Completed"
-
-
-def test_invoice_ai_extraction():
-    """TC07 - Verify AI invoice extraction."""
-    extracted_invoice = {
-        "invoice_number": "INV-1001",
-        "vendor_name": "ABC Supplies",
-        "invoice_date": "2026-09-01",
-        "total_amount": 1000.00,
-        "po_number": "PO-1001",
-    }
-
-    assert extracted_invoice["invoice_number"] is not None
-    assert extracted_invoice["vendor_name"] is not None
-    assert extracted_invoice["total_amount"] is not None
-    assert extracted_invoice["po_number"] is not None
-
-
-def test_invoice_validation():
-    """TC08 - Verify invoice validation."""
-    invoice = {
-        "invoice_number": "INV-1001",
-        "vendor_name": "ABC Supplies",
-        "total_amount": 1000.00,
-        "po_number": "PO-1001",
-    }
-
-    required_fields = [
-        "invoice_number",
-        "vendor_name",
-        "total_amount",
-        "po_number",
-    ]
-
-    for field in required_fields:
-        assert invoice.get(field) is not None
-
-
-def test_two_way_matching():
-    """TC09 - Verify invoice and PO 2-way matching."""
-    purchase_order = {
-        "po_number": "PO-1001",
-        "vendor": "ABC Supplies",
-        "quantity": 10,
-        "unit_price": 100.00,
-    }
-
-    invoice = {
-        "po_number": "PO-1001",
-        "vendor": "ABC Supplies",
-        "quantity": 10,
-        "unit_price": 100.00,
-    }
-
-    assert invoice["po_number"] == purchase_order["po_number"]
-    assert invoice["vendor"] == purchase_order["vendor"]
-    assert invoice["quantity"] == purchase_order["quantity"]
-    assert invoice["unit_price"] == purchase_order["unit_price"]
-
-
-def test_invoice_approval_and_payment():
-    """TC10 - Verify approved invoice moves to Payment Pending."""
-    invoice_status = "Approved"
-
-    next_status = (
-        "Payment Pending"
-        if invoice_status == "Approved"
-        else "Review Required"
+def assert_status(response, expected_status: int):
+    assert response.status_code == expected_status, (
+        f"Expected HTTP {expected_status}, got {response.status_code}: "
+        f"{response.text}"
     )
+    return response.json()
 
-    assert next_status == "Payment Pending"
+
+def register_user():
+    username = f"workflow_{uuid.uuid4().hex}"
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": username,
+            "email": f"{username}@example.com",
+            "password": TEST_PASSWORD,
+        },
+    )
+    assert_status(response, 200)
+    return username
+
+
+def login_user(username: str):
+    response = client.post(
+        "/auth/login",
+        json={
+            "username": username,
+            "password": TEST_PASSWORD,
+        },
+    )
+    data = assert_status(response, 200)
+    token = data.get("access_token")
+    assert isinstance(token, str) and token, (
+        f"Login did not return an access token: {data}"
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def auth_headers():
+    return login_user(register_user())
+
+
+@pytest.fixture
+def business_need(auth_headers):
+    types_response = client.get(
+        "/business-needs/types",
+        headers=auth_headers,
+    )
+    assert types_response.status_code == 200, types_response.text
+    types = types_response.json()
+    assert isinstance(types, list) and types, "No active Business Need types returned"
+
+    response = client.post(
+        "/business-needs/",
+        json={
+            "business_need_type_id": types[0]["id"],
+            "title": f"Workflow test {uuid.uuid4().hex[:8]}",
+            "description": "End-to-end API workflow test",
+            "department": "Engineering",
+            "estimated_value": 2500,
+            "currency": "USD",
+        },
+        headers=auth_headers,
+    )
+    data = assert_status(response, 201)
+    assert data["status"] == "Draft"
+    return data
+
+
+@pytest.fixture
+def submitted_business_need(auth_headers, business_need):
+    response = client.post(
+        f"/business-needs/{business_need['id']}/submit",
+        headers=auth_headers,
+    )
+    data = assert_status(response, 200)
+    assert data["status"] == "Submitted"
+    return data
+
+
+@pytest.fixture
+def submitted_pr(auth_headers, submitted_business_need):
+    response = client.post(
+        "/purchase-requisitions/",
+        json={
+            "business_need_id": submitted_business_need["id"],
+            "title": "Workflow test purchase requisition",
+            "justification": "Created from the submitted Business Need",
+            "line_items": [
+                {
+                    "description": "Workflow test equipment",
+                    "quantity": 2,
+                    "unit_price": 1250,
+                }
+            ],
+        },
+        headers=auth_headers,
+    )
+    pr_data = assert_status(response, 201)
+    assert pr_data["status"] == "Draft"
+    assert pr_data["total_amount"] == 2500
+
+    response = client.post(
+        f"/purchase-requisitions/{pr_data['id']}/submit",
+        headers=auth_headers,
+    )
+    submitted_data = assert_status(response, 200)
+    assert submitted_data["status"] == "Submitted"
+    return submitted_data
+
+
+def test_register_and_login():
+    username = register_user()
+    headers = login_user(username)
+
+    response = client.get("/auth/me", headers=headers)
+    data = assert_status(response, 200)
+    assert data["username"] == username
+
+
+def test_list_active_business_need_types(auth_headers):
+    response = client.get(
+        "/business-needs/types",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    types = response.json()
+    assert isinstance(types, list) and types
+    assert all(type_data["is_active"] for type_data in types)
+
+
+def test_create_business_need(auth_headers, business_need):
+    assert business_need["id"] > 0
+    assert business_need["need_number"].startswith("BN-")
+    assert business_need["status"] == "Draft"
+    assert business_need["currency"] == "USD"
+
+
+def test_submit_business_need(auth_headers, submitted_business_need):
+    assert submitted_business_need["id"] > 0
+    assert submitted_business_need["status"] == "Submitted"
+
+
+def test_create_and_submit_purchase_requisition(
+    auth_headers,
+    submitted_pr,
+):
+    assert submitted_pr["id"] > 0
+    assert submitted_pr["pr_number"].startswith("PR-")
+    assert submitted_pr["status"] == "Submitted"
+    assert submitted_pr["total_amount"] == 2500
+    assert len(submitted_pr["line_items"]) == 1
+
+
+def test_approve_purchase_requisition(auth_headers, submitted_pr):
+    response = client.post(
+        f"/purchase-requisitions/{submitted_pr['id']}/approve",
+        json={"remarks": "Approved by the workflow integration test"},
+        headers=auth_headers,
+    )
+    approved_pr = assert_status(response, 200)
+
+    assert approved_pr["id"] == submitted_pr["id"]
+    assert approved_pr["status"] == "Approved"
+    assert len(approved_pr["approvals"]) == 1
+    assert approved_pr["approvals"][0]["decision"] == "Approved"
+    assert approved_pr["approvals"][0]["remarks"] == (
+        "Approved by the workflow integration test"
+    )

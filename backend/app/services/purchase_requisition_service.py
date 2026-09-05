@@ -15,11 +15,18 @@ class PurchaseRequisitionService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _with_details(self):
-        return self.db.query(PurchaseRequisition).options(
+    def _with_details(self, user_id: int | None = None):
+        query = self.db.query(PurchaseRequisition).options(
             joinedload(PurchaseRequisition.line_items),
             joinedload(PurchaseRequisition.approvals),
         )
+
+        if user_id is not None:
+            query = query.filter(
+                PurchaseRequisition.requester_id == user_id
+            )
+
+        return query
 
     def create(self, data, requester_id: int) -> PurchaseRequisition:
         business_need = self.db.query(BusinessNeed).filter(BusinessNeed.id == data.business_need_id).first()
@@ -68,15 +75,47 @@ class PurchaseRequisitionService:
             message=f"Purchase Requisition {pr.pr_number} created.",
         )
 
-        return self.get_by_id(pr.id)
+        return self.get_by_id(
+            pr.id,
+            requester_id
+        )
 
-    def list(self):
-        return self._with_details().order_by(PurchaseRequisition.id.desc()).all()
+    def list(self, user_id: int):
+        return (
+            self._with_details()
+            .filter(
+                PurchaseRequisition.requester_id
+                == user_id
+            )
+            .order_by(
+                PurchaseRequisition.id.desc()
+            )
+            .all()
+        )
 
-    def get_by_id(self, pr_id: int) -> PurchaseRequisition:
-        pr = self._with_details().filter(PurchaseRequisition.id == pr_id).first()
+    def get_by_id(
+        self,
+        pr_id: int,
+        user_id: int | None = None,
+    ) -> PurchaseRequisition:
+
+        query = self._with_details().filter(
+            PurchaseRequisition.id == pr_id
+        )
+
+        if user_id is not None:
+            query = query.filter(
+                PurchaseRequisition.requester_id == user_id
+            )
+
+        pr = query.first()
+
         if pr is None:
-            raise HTTPException(status_code=404, detail="Purchase Requisition not found.")
+            raise HTTPException(
+                status_code=404,
+                detail="Purchase Requisition not found."
+            )
+
         return pr
 
     def submit(
@@ -85,7 +124,10 @@ class PurchaseRequisitionService:
         user_id: int,
     ) -> PurchaseRequisition:
 
-        pr = self.get_by_id(pr_id)
+        pr = self.get_by_id(
+            pr_id,
+            user_id
+        )
 
         if pr.status != "Draft":
             raise HTTPException(
@@ -105,9 +147,13 @@ class PurchaseRequisitionService:
             message=f"Purchase Requisition {pr.pr_number} submitted.",
         )
 
-        return self.get_by_id(pr.id)
+        return self.get_by_id(
+            pr.id,
+            user_id
+        )
 
     def decide(
+
         self,
         pr_id: int,
         reviewer_id: int,
@@ -121,7 +167,10 @@ class PurchaseRequisitionService:
                 detail="Decision must be Approved or Rejected."
             )
 
-        pr = self.get_by_id(pr_id)
+        pr = self.get_by_id(
+            pr_id,
+            reviewer_id
+        )
 
         if pr.status != "Submitted":
             raise HTTPException(
@@ -159,7 +208,10 @@ class PurchaseRequisitionService:
         user_id: int,
     ) -> PurchaseRequisition:
 
-        pr = self.get_by_id(pr_id)
+        pr = self.get_by_id(
+            pr_id,
+            user_id
+        )
 
         if pr.status != "Approved":
             raise HTTPException(
@@ -202,7 +254,10 @@ class PurchaseRequisitionService:
             ),
         )
 
-        return self.get_by_id(pr.id)
+        return self.get_by_id(
+            pr.id,
+            user_id
+        )
 
     def record_negotiation(
         self,
@@ -212,7 +267,10 @@ class PurchaseRequisitionService:
         user_id: int,
     ) -> PurchaseRequisition:
 
-        pr = self.get_by_id(pr_id)
+        pr = self.get_by_id(
+            pr_id,
+            user_id
+        )
 
         # ======================================================
         # Validate PR workflow state
@@ -303,4 +361,7 @@ class PurchaseRequisitionService:
             ),
         )
 
-        return self.get_by_id(pr.id)
+        return self.get_by_id(
+            pr.id,
+            user_id
+        )

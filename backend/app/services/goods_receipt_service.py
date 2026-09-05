@@ -22,6 +22,36 @@ class GoodsReceiptService:
         self.db = db
 
     # ==========================================================
+    # Check Goods Receipt Ownership
+    # ==========================================================
+    def _user_can_access_receipt(
+        self,
+        receipt: GoodsReceipt,
+        user_id: int,
+    ) -> bool:
+        """
+        A Goods Receipt belongs to the user who created
+        the related Purchase Order.
+        """
+
+        if receipt is None:
+            return False
+
+        purchase_order = (
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.id
+                == receipt.purchase_order_id
+            )
+            .first()
+        )
+
+        if purchase_order is None:
+            return False
+
+        return purchase_order.created_by_id == user_id
+
+    # ==========================================================
     # Create Goods Receipt / Service Entry
     # ==========================================================
     def create_goods_receipt(
@@ -33,7 +63,8 @@ class GoodsReceiptService:
         purchase_order = (
             self.db.query(ProcurementPurchaseOrder)
             .filter(
-                ProcurementPurchaseOrder.id == request.purchase_order_id
+                ProcurementPurchaseOrder.id == request.purchase_order_id,
+                ProcurementPurchaseOrder.created_by_id == user_id,
             )
             .first()
         )
@@ -197,62 +228,88 @@ class GoodsReceiptService:
         return goods_receipt
 
     # ==========================================================
-    # Get All Goods Receipts
+    # Get All Goods Receipts for Current User
     # ==========================================================
     def get_all_goods_receipts(
         self,
+        user_id: int,
     ) -> List[GoodsReceipt]:
 
         return (
             self.db.query(GoodsReceipt)
-            .order_by(GoodsReceipt.id.desc())
+            .join(
+                ProcurementPurchaseOrder,
+                GoodsReceipt.purchase_order_id
+                == ProcurementPurchaseOrder.id,
+            )
+            .filter(
+                ProcurementPurchaseOrder.created_by_id
+                == user_id
+            )
+            .order_by(
+                GoodsReceipt.id.desc()
+            )
             .all()
         )
 
     # ==========================================================
-    # Get Goods Receipt by ID
+    # Get Goods Receipt by ID for Current User
     # ==========================================================
     def get_goods_receipt(
         self,
         receipt_id: int,
+        user_id: int,
     ) -> Optional[GoodsReceipt]:
 
         return (
             self.db.query(GoodsReceipt)
+            .join(
+                ProcurementPurchaseOrder,
+                GoodsReceipt.purchase_order_id
+                == ProcurementPurchaseOrder.id,
+            )
             .filter(
-                GoodsReceipt.id == receipt_id
+                GoodsReceipt.id == receipt_id,
+                ProcurementPurchaseOrder.created_by_id
+                == user_id,
             )
             .first()
         )
 
     # ==========================================================
-    # Get Goods Receipts for Purchase Order
+    # Get Goods Receipts for Current User's Purchase Order
     # ==========================================================
     def get_by_purchase_order(
         self,
         po_id: int,
+        user_id: int,
     ) -> List[GoodsReceipt]:
 
         purchase_order = (
             self.db.query(ProcurementPurchaseOrder)
             .filter(
-                ProcurementPurchaseOrder.id == po_id
+                ProcurementPurchaseOrder.id == po_id,
+                ProcurementPurchaseOrder.created_by_id
+                == user_id,
             )
             .first()
         )
 
         if purchase_order is None:
-            raise ValueError("Purchase Order not found.")
+            raise ValueError(
+                "Purchase Order not found."
+            )
 
         return (
             self.db.query(GoodsReceipt)
             .filter(
                 GoodsReceipt.purchase_order_id == po_id
             )
-            .order_by(GoodsReceipt.id.desc())
+            .order_by(
+                GoodsReceipt.id.desc()
+            )
             .all()
         )
-
     # ==========================================================
     # Submit Goods Receipt
     # ==========================================================
@@ -262,7 +319,10 @@ class GoodsReceiptService:
         user_id: int,
     ) -> GoodsReceipt:
 
-        receipt = self._get_required(receipt_id)
+        receipt = self._get_required(
+            receipt_id,
+            user_id
+        )
 
         if receipt.status != "Draft":
             raise ValueError(
@@ -324,7 +384,10 @@ class GoodsReceiptService:
         remarks: Optional[str] = None,
     ) -> GoodsReceipt:
 
-        receipt = self._get_required(receipt_id)
+        receipt = self._get_required(
+            receipt_id,
+            user_id
+        )
 
         allowed_transitions = {
             "Draft": {"Submitted"},
@@ -431,12 +494,20 @@ class GoodsReceiptService:
     def _get_required(
         self,
         receipt_id: int,
+        user_id: int,
     ) -> GoodsReceipt:
 
         receipt = (
             self.db.query(GoodsReceipt)
+            .join(
+                ProcurementPurchaseOrder,
+                GoodsReceipt.purchase_order_id
+                == ProcurementPurchaseOrder.id,
+            )
             .filter(
-                GoodsReceipt.id == receipt_id
+                GoodsReceipt.id == receipt_id,
+                ProcurementPurchaseOrder.created_by_id
+                == user_id,
             )
             .first()
         )

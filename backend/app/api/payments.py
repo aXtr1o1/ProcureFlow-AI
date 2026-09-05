@@ -71,12 +71,16 @@ def create_payment(
     response_model=List[PaymentResponse],
 )
 def get_all_payments(
+    payment_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     service = PaymentService(db)
 
-    return service.get_all_payments()
+    return service.get_all_payments(
+        payment_id=payment_id,
+        user_id=current_user.id
+    )
 
 
 # ==========================================================
@@ -94,7 +98,10 @@ def get_payment(
 ):
     service = PaymentService(db)
 
-    payment = service.get_payment(payment_id)
+    payment = service.get_payment(
+        payment_id=payment_id,
+        user_id=current_user.id
+    )
 
     if payment is None:
         raise HTTPException(
@@ -118,13 +125,20 @@ def get_payments_for_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Return payments for an invoice.
+
+    - Owner of the invoice  → sees all payments.
+    - Any other authenticated user → sees an empty list (privacy).
+    - Invoice does not exist → 404.
+    """
     service = PaymentService(db)
 
     try:
         return service.get_by_invoice(
-            invoice_id
+            invoice_id=invoice_id,
+            user_id=current_user.id,
         )
-
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -144,13 +158,20 @@ def get_invoice_payment_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Return payment summary for an invoice.
+
+    - Owner of the invoice  → sees real totals.
+    - Any other authenticated user → sees a zero summary (privacy).
+    - Invoice does not exist → 404.
+    """
     service = PaymentService(db)
 
     try:
         return service.get_invoice_payment_summary(
-            invoice_id
+            invoice_id=invoice_id,
+            user_id=current_user.id,
         )
-
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

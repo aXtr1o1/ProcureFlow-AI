@@ -7,6 +7,7 @@ import {
   approveInvoice,
   rejectInvoice,
   getApprovalHistory,
+  getInvoicePreviewUrl,
 } from "@/services/api";
 
 import { fmtDate } from "@/lib/invoices";
@@ -53,9 +54,9 @@ const inputClass =
 export default function InvoiceApprovalPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   const [invoice, setInvoice] = useState<Invoice | null | undefined>(undefined);
+  const [invoicePreviewUrl, setInvoicePreviewUrl] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<"approved" | "rejected" | null>(null);
   const [history, setHistory] = useState<ApprovalHistory[]>([]);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -76,6 +77,22 @@ export default function InvoiceApprovalPage() {
 
     loadApproval();
   }, [params.id]);
+
+  useEffect(() => {
+    if (!invoice?.blob_name) return;
+
+    let previewUrl: string | null = null;
+    getInvoicePreviewUrl(invoice.blob_name)
+      .then((url) => {
+        previewUrl = url;
+        setInvoicePreviewUrl(url);
+      })
+      .catch((error) => console.error("Failed to load invoice preview:", error));
+
+    return () => {
+      if (previewUrl) window.URL.revokeObjectURL(previewUrl);
+    };
+  }, [invoice?.blob_name]);
 
   if (invoice === undefined) {
     return (
@@ -179,11 +196,7 @@ export default function InvoiceApprovalPage() {
   });
 
   const handleDownload = () => {
-    if (!invoice?.blob_name) return;
-    window.open(
-      `${API_URL}/invoices/${encodeURIComponent(invoice.blob_name)}`,
-      "_blank",
-    );
+    if (invoicePreviewUrl) window.open(invoicePreviewUrl, "_blank");
   };
 
   const handleDecision = async (decision: "approved" | "rejected") => {
@@ -237,9 +250,7 @@ export default function InvoiceApprovalPage() {
     }
   };
 
-  const invoicePdfUrl = invoice.blob_name
-    ? `${API_URL}/invoices/${invoice.blob_name}`
-    : invoice.blob_url || null;
+  const invoicePdfUrl = invoicePreviewUrl;
 
   return (
     <main className="relative w-full bg-surface min-h-[calc(100vh-80px)] px-lg">

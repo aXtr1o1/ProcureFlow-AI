@@ -115,6 +115,33 @@ function getAuthHeaders(): HeadersInit {
   };
 }
 
+async function parseApiResponse(response: Response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    return await response.json();
+  }
+
+  return null;
+}
+
+function handleUnauthorized(response: Response) {
+  if (response.status === 401) {
+    localStorage.removeItem("access_token");
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (response.status === 403) {
+    throw new Error(
+      "You do not have permission to access this resource."
+    );
+  }
+
+  if (response.status === 404) {
+    throw new Error("Requested resource was not found.");
+  }
+}
+
 export async function login(username: string, password: string) {
 
   console.log("API URL:", API_URL);
@@ -273,28 +300,23 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
 
 export async function getInvoices() {
   const response = await fetch(`${API_URL}/invoices/`, {
+    method: "GET",
     headers: getAuthHeaders(),
     cache: "no-store",
   });
 
-  const data = await response.json();
+  handleUnauthorized(response);
 
-  console.log("getInvoices Status:", response.status);
-  console.log("getInvoices Response:", data);
-
-  if (response.status === 401) {
-    localStorage.removeItem("access_token");
-    throw new Error("Session expired. Please login again.");
-  }
+  const data = await parseApiResponse(response);
 
   if (!response.ok) {
-    const detail = data.detail;
+    const detail = data?.detail;
 
     const message = Array.isArray(detail)
       ? detail
           .map((item: { msg?: string }) => item.msg || String(item))
           .join(", ")
-      : detail || "Failed to fetch invoices";
+      : detail || "Failed to fetch invoices.";
 
     throw new Error(message);
   }
@@ -317,60 +339,142 @@ export async function getInvoices() {
 }
 
 export async function getInvoice(id: number | string) {
+  if (!id) {
+    throw new Error("Invoice ID is missing.");
+  }
 
-    if (!id) {
-        throw new Error("Invoice ID is missing");
+  const url = `${API_URL}/invoices/details/${encodeURIComponent(
+    String(id)
+  )}`;
+
+  console.log("GET Invoice URL:", url);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+  });
+
+  const data = await parseApiResponse(response);
+
+  console.log("GET Invoice Status:", response.status);
+  console.log("GET Invoice Response:", data);
+
+  if (response.status === 401) {
+    localStorage.removeItem("access_token");
+    throw new Error("Session expired. Please login again.");
+  }
+
+  if (response.status === 403) {
+    throw new Error(
+      "You do not have permission to access this invoice."
+    );
+  }
+
+  if (response.status === 404) {
+    throw new Error("Invoice was not found.");
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to fetch invoice."
+    );
+  }
+
+  return data;
+}
+// ==========================================================
+// Download Invoice
+// ==========================================================
+
+export async function downloadInvoice(blobName: string) {
+  if (!blobName) {
+    throw new Error("Invoice file name is missing.");
+  }
+
+  const response = await fetch(
+    `${API_URL}/invoices/${encodeURIComponent(blobName)}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
     }
+  );
 
-    const token = localStorage.getItem("access_token");
+  handleUnauthorized(response);
 
-    try {
+  if (!response.ok) {
+    const data = await parseApiResponse(response);
 
-        const response = await fetch(
-            `${API_URL}/invoices/details/${id}`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            }
-        );
+    throw new Error(
+      data?.detail || "Failed to download invoice."
+    );
+  }
 
-        const data = await response.json();
+  const blob = await response.blob();
 
-        console.log("Invoice Response:", response.status);
-        console.log(data);
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
 
-        if (!response.ok) {
-            throw new Error(data.detail || "Failed to fetch invoice");
-        }
+  link.href = downloadUrl;
+  link.download = blobName.split("/").pop() || "invoice.pdf";
 
-        return data;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 
-    } catch (err) {
+  window.URL.revokeObjectURL(downloadUrl);
+}
 
-        console.error("getInvoice Error:", err);
+export async function getInvoicePreviewUrl(blobName: string) {
+  if (!blobName) {
+    throw new Error("Invoice file name is missing.");
+  }
 
-        throw err;
+  const response = await fetch(
+    `${API_URL}/invoices/${encodeURIComponent(blobName)}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
     }
+  );
+
+  handleUnauthorized(response);
+
+  if (!response.ok) {
+    const data = await parseApiResponse(response);
+    throw new Error(data?.detail || "Failed to load invoice.");
+  }
+
+  return window.URL.createObjectURL(await response.blob());
 }
 
 export async function getApprovalDetails(id: number | string) {
-    const token = localStorage.getItem("access_token");
+  if (!id) {
+    throw new Error("Invoice ID is missing.");
+  }
 
-    const response = await fetch(
-        `${API_URL}/approval/${id}`,
-        {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        }
-    );
-
-    if (!response.ok) {
-        throw new Error("Failed to fetch approval details");
+  const response = await fetch(
+    `${API_URL}/approval/${encodeURIComponent(String(id))}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
     }
+  );
 
-    return await response.json();
+  handleUnauthorized(response);
+
+  const data = await parseApiResponse(response);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to fetch approval details."
+    );
+  }
+
+  return data;
 }
 
 export async function approveInvoice(
@@ -455,22 +559,30 @@ export async function rejectInvoice(
 }
 
 export async function getApprovalHistory(id: number | string) {
-    const token = localStorage.getItem("access_token");
+  if (!id) {
+    throw new Error("Invoice ID is missing.");
+  }
 
-    const response = await fetch(
-        `${API_URL}/approval/history/${id}`,
-        {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        }
-    );
-
-    if (!response.ok) {
-        throw new Error("Failed to fetch approval history");
+  const response = await fetch(
+    `${API_URL}/approval/history/${encodeURIComponent(String(id))}`,
+    {
+      method: "GET",
+      headers: getAuthHeaders(),
+      cache: "no-store",
     }
+  );
 
-    return await response.json();
+  handleUnauthorized(response);
+
+  const data = await parseApiResponse(response);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to fetch approval history."
+    );
+  }
+
+  return data;
 }
 
 export async function searchInvoice(query: string) {
@@ -520,27 +632,32 @@ export async function searchInvoiceByNumber(invoiceNumber: string) {
 }
 
 export async function updateInvoiceStatus(
-    id: number | string
+  id: number | string
 ) {
-    const token = localStorage.getItem("access_token");
+  if (!id) {
+    throw new Error("Invoice ID is missing.");
+  }
 
-    const response = await fetch(
-        `${API_URL}/invoices/${id}/status`,
-        {
-            method: "PUT",
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data.detail);
+  const response = await fetch(
+    `${API_URL}/invoices/${encodeURIComponent(String(id))}/status`,
+    {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      cache: "no-store",
     }
+  );
 
-    return data;
+  handleUnauthorized(response);
+
+  const data = await parseApiResponse(response);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Failed to update invoice status."
+    );
+  }
+
+  return data;
 }
 
 export async function generateSummary(invoiceId: number) {
@@ -799,23 +916,28 @@ export async function rejectInvoiceMatch(
   invoiceId: number | string,
   remarks?: string
 ) {
-  const token = localStorage.getItem("access_token");
+  if (!invoiceId) {
+    throw new Error("Invoice ID is missing.");
+  }
 
   const response = await fetch(
-    `${API_URL}/matching/${invoiceId}/reject`,
+    `${API_URL}/matching/${encodeURIComponent(String(invoiceId))}/reject`,
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({
-        remarks: remarks ?? null,
+        remarks: remarks?.trim() || null,
       }),
+      cache: "no-store",
     }
   );
 
-  const data = await response.json();
+  handleUnauthorized(response);
+
+  const data = await parseApiResponse(response);
 
   if (!response.ok) {
     const detail = data?.detail;
@@ -910,8 +1032,12 @@ export async function createPayment(payment: {
 export async function getInvoicePayments(
   invoiceId: number | string
 ): Promise<Payment[]> {
+  if (!invoiceId) {
+    throw new Error("Invoice ID is missing.");
+  }
+
   const response = await fetch(
-    `${API_URL}/payments/invoice/${invoiceId}`,
+    `${API_URL}/payments/invoice/${encodeURIComponent(String(invoiceId))}`,
     {
       method: "GET",
       headers: getAuthHeaders(),
@@ -919,12 +1045,9 @@ export async function getInvoicePayments(
     }
   );
 
-  const data = await response.json();
+  const data = await parseApiResponse(response);
 
-  if (response.status === 401) {
-    localStorage.removeItem("access_token");
-    throw new Error("Session expired. Please login again.");
-  }
+  handleUnauthorized(response);
 
   if (!response.ok) {
     throw new Error(
@@ -942,8 +1065,12 @@ export async function getInvoicePayments(
 export async function getInvoicePaymentSummary(
   invoiceId: number | string
 ): Promise<PaymentSummary> {
+  if (!invoiceId) {
+    throw new Error("Invoice ID is missing.");
+  }
+
   const response = await fetch(
-    `${API_URL}/payments/invoice/${invoiceId}/summary`,
+    `${API_URL}/payments/invoice/${encodeURIComponent(String(invoiceId))}/summary`,
     {
       method: "GET",
       headers: getAuthHeaders(),
@@ -951,12 +1078,9 @@ export async function getInvoicePaymentSummary(
     }
   );
 
-  const data = await response.json();
+  const data = await parseApiResponse(response);
 
-  if (response.status === 401) {
-    localStorage.removeItem("access_token");
-    throw new Error("Session expired. Please login again.");
-  }
+  handleUnauthorized(response);
 
   if (!response.ok) {
     throw new Error(

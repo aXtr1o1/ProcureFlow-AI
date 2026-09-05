@@ -73,7 +73,18 @@ class PaymentService:
     # Get Invoice
     # ======================================================
 
-    def _get_invoice(self, invoice_id: int) -> Invoice:
+    def _get_invoice(
+        self,
+        invoice_id: int,
+        user_id: int | None = None,
+    ) -> Invoice:
+        """
+        Fetch an invoice by primary key.
+
+        user_id is only used for write operations (e.g. create_payment).
+        Read-only callers (get_by_invoice, get_invoice_payment_summary)
+        omit user_id so any authenticated team member can view payments.
+        """
         invoice = (
             self.db.query(Invoice)
             .filter(Invoice.id == invoice_id)
@@ -82,6 +93,12 @@ class PaymentService:
 
         if invoice is None:
             raise ValueError("Invoice not found.")
+
+        # Ownership check — only enforced when user_id is explicitly supplied.
+        if user_id is not None and invoice.user_id != user_id:
+            raise ValueError(
+                "You do not have permission to access this invoice."
+            )
 
         return invoice
 
@@ -100,7 +117,10 @@ class PaymentService:
         New payment starts in Pending status.
         """
 
-        invoice = self._get_invoice(request.invoice_id)
+        invoice = self._get_invoice(
+            invoice_id=request.invoice_id,
+            user_id=user_id,
+        )
 
         # ----------------------------------------------
         # Payment is allowed only after invoice approval
@@ -198,9 +218,19 @@ class PaymentService:
     # Get All Payments
     # ======================================================
 
-    def get_all_payments(self) -> List[Payment]:
+    def get_all_payments(
+        self,
+        user_id: int,
+    ) -> List[Payment]:
         return (
             self.db.query(Payment)
+            .join(
+                Invoice,
+                Payment.invoice_id == Invoice.id,
+            )
+            .filter(
+                Invoice.user_id == user_id
+            )
             .order_by(Payment.created_at.desc())
             .all()
         )
@@ -212,13 +242,26 @@ class PaymentService:
     def get_payment(
         self,
         payment_id: int,
+        user_id: int | None = None,
     ) -> Optional[Payment]:
 
-        return (
+        query = (
             self.db.query(Payment)
-            .filter(Payment.id == payment_id)
-            .first()
+            .join(
+                Invoice,
+                Payment.invoice_id == Invoice.id,
+            )
+            .filter(
+                Payment.id == payment_id
+            )
         )
+
+        if user_id is not None:
+            query = query.filter(
+                Invoice.user_id == user_id
+            )
+
+        return query.first()
 
     # ======================================================
     # Get Payments for Invoice
@@ -227,15 +270,31 @@ class PaymentService:
     def get_by_invoice(
         self,
         invoice_id: int,
+        user_id: int,
     ) -> List[Payment]:
+        """
+        Return payments for an invoice.
 
-        self._get_invoice(invoice_id)
+        If the invoice exists but belongs to another user, return an empty
+        list (privacy) rather than raising an error (usability).
+        """
+        invoice = (
+            self.db.query(Invoice)
+            .filter(Invoice.id == invoice_id)
+            .first()
+        )
+
+        # Invoice does not exist at all — raise so the API can return 404.
+        if invoice is None:
+            raise ValueError("Invoice not found.")
+
+        # Invoice belongs to a different user — hide payments (return empty).
+        if invoice.user_id != user_id:
+            return []
 
         return (
             self.db.query(Payment)
-            .filter(
-                Payment.invoice_id == invoice_id
-            )
+            .filter(Payment.invoice_id == invoice_id)
             .order_by(Payment.created_at.desc())
             .all()
         )
@@ -253,7 +312,10 @@ class PaymentService:
         payment_date: Optional[datetime] = None,
     ) -> Payment:
 
-        payment = self.get_payment(payment_id)
+        payment = self.get_payment(
+            payment_id=payment_id,
+            user_id=user_id,
+        )
 
         if payment is None:
             raise ValueError(
@@ -364,9 +426,36 @@ class PaymentService:
     def get_invoice_payment_summary(
         self,
         invoice_id: int,
+        user_id: int,
     ) -> dict:
+        """
+        Return payment summary for an invoice.
 
-        invoice = self._get_invoice(invoice_id)
+        If the invoice belongs to another user, return a zero-value summary
+        (privacy) instead of exposing their financial data.
+        """
+        invoice = (
+            self.db.query(Invoice)
+            .filter(Invoice.id == invoice_id)
+            .first()
+        )
+
+        if invoice is None:
+            raise ValueError("Invoice not found.")
+
+        # Invoice belongs to another user — return a blank summary.
+        if invoice.user_id != user_id:
+            return {
+                "invoice_id": invoice_id,
+                "invoice_total": float(invoice.total_amount or 0),
+                "total_paid": 0.0,
+                "total_pending": 0.0,
+                "total_failed": 0.0,
+                "total_cancelled": 0.0,
+                "remaining_amount": float(invoice.total_amount or 0),
+                "payment_status": "Unpaid",
+                "currency": invoice.currency or "USD",
+            }
 
         payments = (
             self.db.query(Payment)
@@ -425,4 +514,5 @@ class PaymentService:
             "total_cancelled": total_cancelled,
             "remaining_amount": remaining_amount,
             "payment_status": payment_status,
+            "currency": invoice.currency or "USD",
         }

@@ -4,6 +4,8 @@ from typing import Dict, Optional
 from sqlalchemy import func, extract
 from sqlalchemy.orm import Session
 
+from fastapi import HTTPException
+
 from app.database.models import (
     BusinessNeed,
     PurchaseRequisition,
@@ -34,6 +36,79 @@ class DashboardService:
         self.db = db
         self.user_id = user_id
 
+    def _apply_user_filter(self, query, model):
+        """
+        Apply the authenticated user's ownership filter.
+        """
+
+        if self.user_id is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Authenticated user is required.",
+            )
+
+        if model in (
+            BusinessNeed,
+            PurchaseRequisition,
+        ):
+            return query.filter(
+                model.requester_id == self.user_id
+            )
+
+        if model is ProcurementPurchaseOrder:
+            return (
+                query
+                .join(
+                    PurchaseRequisition,
+                    ProcurementPurchaseOrder.purchase_requisition_id
+                    == PurchaseRequisition.id,
+                )
+                .filter(
+                    PurchaseRequisition.requester_id
+                    == self.user_id
+                )
+            )
+
+        if model is GoodsReceipt:
+            return (
+                query
+                .join(
+                    ProcurementPurchaseOrder,
+                    GoodsReceipt.purchase_order_id
+                    == ProcurementPurchaseOrder.id,
+                )
+                .join(
+                    PurchaseRequisition,
+                    ProcurementPurchaseOrder.purchase_requisition_id
+                    == PurchaseRequisition.id,
+                )
+                .filter(
+                    PurchaseRequisition.requester_id
+                    == self.user_id
+                )
+            )
+
+        if model is Payment:
+            return (
+                query
+                .join(
+                    Invoice,
+                    Payment.invoice_id == Invoice.id,
+                )
+                .filter(
+                    Invoice.user_id == self.user_id
+                )
+            )
+
+        if hasattr(model, "user_id"):
+            return query.filter(
+                model.user_id == self.user_id
+            )
+
+        raise AttributeError(
+            f"{model.__name__} does not have a supported ownership column."
+        )
+
     # ==========================================================
     # Generic Helpers
     # ==========================================================
@@ -45,16 +120,27 @@ class DashboardService:
     ) -> Dict[str, int]:
 
         if status_column is None:
-            status_column = getattr(model, "status", None)
+            status_column = getattr(
+                model,
+                "status",
+                None,
+            )
 
         if status_column is None:
             return {}
 
+        query = self.db.query(
+            status_column,
+            func.count(model.id),
+        )
+
+        query = self._apply_user_filter(
+            query,
+            model,
+        )
+
         rows = (
-            self.db.query(
-                status_column,
-                func.count(model.id),
-            )
+            query
             .group_by(status_column)
             .all()
         )
@@ -67,24 +153,35 @@ class DashboardService:
 
     def _count(self, model) -> int:
 
+        query = self.db.query(
+            func.count(model.id)
+        )
+
+        query = self._apply_user_filter(
+            query,
+            model,
+        )
+
         return int(
-            self.db.query(
-                func.count(model.id)
-            ).scalar()
+            query.scalar()
             or 0
         )
 
     def _sum(self, model, column) -> float:
 
-        value = (
-            self.db.query(
-                func.coalesce(
-                    func.sum(column),
-                    0,
-                )
+        query = self.db.query(
+            func.coalesce(
+                func.sum(column),
+                0,
             )
-            .scalar()
         )
+
+        query = self._apply_user_filter(
+            query,
+            model,
+        )
+
+        value = query.scalar()
 
         return float(value or 0)
 
@@ -111,7 +208,7 @@ class DashboardService:
             "Acknowledged",
         ]
 
-        active_pos = (
+        active_pos_query = (
             self.db.query(
                 func.count(
                     ProcurementPurchaseOrder.id
@@ -122,7 +219,15 @@ class DashboardService:
                     active_po_statuses
                 )
             )
-            .scalar()
+        )
+
+        active_pos_query = self._apply_user_filter(
+            active_pos_query,
+            ProcurementPurchaseOrder,
+        )
+
+        active_pos = (
+            active_pos_query.scalar()
             or 0
         )
 

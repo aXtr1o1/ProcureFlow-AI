@@ -21,6 +21,8 @@ from app.services.invoice_service import InvoiceService
 from app.services.validation_service import ValidationService
 from app.services.currency_service import convert_invoice_amounts_to_usd
 
+from app.services.matching_service import MatchingService
+
 from app.schemas.invoice_schema import (
     InvoicePurchaseOrderLinkRequest,
 )
@@ -39,6 +41,7 @@ blob_service = BlobStorageService()
 
 def _find_duplicate_invoice(
     db: Session,
+    user_id: int,
     invoice_number: str,
     vendor_name: str,
     invoice_date: str,
@@ -56,6 +59,7 @@ def _find_duplicate_invoice(
             db.query(Invoice)
             .filter(
                 Invoice.invoice_number == invoice_number,
+                Invoice.user_id == user_id,
                 *query_filters,
             )
             .first()
@@ -68,6 +72,7 @@ def _find_duplicate_invoice(
         return (
             db.query(Invoice)
             .filter(
+                Invoice.user_id == user_id,
                 Invoice.vendor_name == vendor_name,
                 Invoice.invoice_date == str(invoice_date),
                 Invoice.total_amount == float(total_amount),
@@ -184,7 +189,10 @@ def _persist_validated_invoice(
 # Upload Invoice
 # ==========================================================
 @router.post("/")
-async def upload_invoice(file: UploadFile = File(...)):
+async def upload_invoice(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
     """
     Upload an invoice PDF to Azure Blob Storage.
     """
@@ -205,6 +213,7 @@ async def upload_invoice(file: UploadFile = File(...)):
 
         result = await blob_service.upload_invoice(
             document_id=document_id,
+            user_id=current_user.id,
             file=file
         )
 
@@ -234,13 +243,17 @@ async def get_all_invoices(
     invoice_service = InvoiceService(db)
 
     invoices = invoice_service.get_all_invoices(
-        current_user.id
-    )
+    user_id=current_user.id
+)
 
     data = []
 
     for invoice in invoices:
-        line_items = invoice_service.get_invoice_line_items(invoice.id)
+        line_items = invoice_service.get_invoice_line_items(
+            invoice_id=invoice.id,
+            user_id=current_user.id,
+        )
+
         data.append({
             "id": invoice.id,
             "invoice_number": invoice.invoice_number,
@@ -278,27 +291,38 @@ async def get_all_invoices(
 # ==========================================================
 # Get Invoice Details
 # ==========================================================
+# ==========================================================
+# Get Invoice Details
+# ==========================================================
 @router.get("/details/{invoice_id}")
 async def get_invoice_details(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     invoice_service = InvoiceService(db)
 
+    # Scoped to the current user — each user only sees their own invoices.
     invoice = invoice_service.get_invoice_by_id(
-        invoice_id,
-        current_user.id
+        invoice_id=invoice_id,
+        user_id=current_user.id,
     )
 
-    if not invoice:
+    if invoice is None:
         raise HTTPException(
             status_code=404,
-            detail="Invoice not found."
+            detail="Invoice not found.",
         )
 
-    line_items = invoice_service.get_invoice_line_items(invoice_id)
-    status_logs = invoice_service.get_invoice_status_logs(invoice_id)
+    line_items = invoice_service.get_invoice_line_items(
+        invoice_id=invoice_id,
+        user_id=current_user.id,
+    )
+
+    status_logs = invoice_service.get_invoice_status_logs(
+        invoice_id=invoice_id,
+        user_id=current_user.id,
+    )
 
     return {
         "success": True,
@@ -337,8 +361,8 @@ async def get_invoice_details(
                     "created_at": log.created_at,
                 }
                 for log in status_logs
-            ]
-        }
+            ],
+        },
     }
 
 # ==========================================================
@@ -353,85 +377,56 @@ async def link_invoice_to_purchase_order(
 ):
     invoice_service = InvoiceService(db)
 
+    invoice = invoice_service.get_invoice_by_id(
+        invoice_id=invoice_id,
+        user_id=current_user.id,
+    )
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Invoice not found.",
+        )
+
+    if invoice.processing_status in {
+        "Approval Pending",
+        "Approved",
+        "Payment Pending",
+        "Paid",
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Approved or paid invoices cannot be matched again."
+            ),
+        )
+
     return invoice_service.link_invoice_to_purchase_order(
         invoice_id=invoice_id,
         purchase_order_id=request.purchase_order_id,
+        user_id=current_user.id,
     )
-
-# ==========================================================
-# Download Invoice
-# ==========================================================
-@router.get("/{blob_name:path}")
-async def download_invoice(blob_name: str):
-    """
-    Download invoice from Azure Blob Storage.
-    """
-
-    try:
-
-        data = blob_service.download_invoice(blob_name)
-
-        filename = os.path.basename(blob_name)
-
-        return StreamingResponse(
-            io.BytesIO(data),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'inline; filename="{filename}"'
-            }
-        )
-
-    except Exception as e:
-
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
-
-# ==========================================================
-# Delete Invoice
-# ==========================================================
-@router.delete("/{blob_name:path}")
-async def delete_invoice(blob_name: str):
-    """
-    Delete invoice from Azure Blob Storage.
-    """
-
-    try:
-
-        blob_service.delete_invoice(blob_name)
-
-        return {
-            "success": True,
-            "message": "Invoice deleted successfully."
-        }
-
-    except Exception as e:
-
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
-
 
 # ==========================================================
 # Send a successfully matched invoice for approval
 # ==========================================================
 @router.put("/{invoice_id}/status")
-def update_invoice_status(
+async def update_invoice_status(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user)
 ):
+
     invoice_service = InvoiceService(db)
 
-    invoice = invoice_service.send_for_approval(invoice_id)
+    invoice = invoice_service.send_for_approval(
+        invoice_id=invoice_id,
+        user_id=current_user.id,
+    )
 
     return {
         "success": True,
-        "invoice_id": invoice.id,
-        "status": invoice.processing_status,
-        "message": "Invoice sent for approval successfully.",
+        "status": invoice.processing_status
     }
 
 @router.post("/analyze")
@@ -499,6 +494,7 @@ async def analyze_invoice(
         # ========== DUPLICATE CHECK — exit without saving ==========
         duplicate_invoice = _find_duplicate_invoice(
             db=db,
+            user_id=current_user.id,
             invoice_number=ocr_result.get("invoice_number", ""),
             vendor_name=ocr_result.get("vendor_name", ""),
             invoice_date=ocr_result.get("invoice_date", ""),
@@ -562,3 +558,153 @@ async def analyze_invoice(
             status_code=500,
             detail=f"Invoice analysis failed: {str(e)}"
         )
+
+# ==========================================================
+# Download Invoice
+# ==========================================================
+@router.get("/{blob_name:path}")
+async def download_invoice(
+    blob_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    invoice = (
+        db.query(Invoice)
+        .filter(
+            Invoice.blob_name == blob_name,
+            Invoice.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Invoice not found.",
+        )
+
+    try:
+        data = blob_service.download_invoice(blob_name)
+
+        filename = os.path.basename(blob_name)
+
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": (
+                    f'inline; filename="{filename}"'
+                )
+            },
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception("Invoice download failed")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to download invoice.",
+        )
+
+# ==========================================================
+# Delete Invoice
+# ==========================================================
+@router.delete("/{blob_name:path}")
+async def delete_invoice(
+    blob_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    invoice = (
+        db.query(Invoice)
+        .filter(
+            Invoice.blob_name == blob_name,
+            Invoice.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Invoice not found.",
+        )
+
+    try:
+        blob_service.delete_invoice(blob_name)
+
+        db.delete(invoice)
+        db.commit()
+
+        return {
+            "success": True,
+            "message": "Invoice deleted successfully.",
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        db.rollback()
+        logger.exception("Invoice deletion failed")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to delete invoice.",
+        )
+
+# ==========================================================
+# Match Invoice with Procurement Purchase Order
+# ==========================================================
+@router.post("/{invoice_id}/match")
+async def match_invoice_with_purchase_order(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    invoice_service = InvoiceService(db)
+
+    invoice = invoice_service.get_invoice_by_id(
+        invoice_id=invoice_id,
+        user_id=current_user.id,
+    )
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Invoice not found.",
+        )
+
+    if invoice.processing_status in {
+        "Approval Pending",
+        "Approved",
+        "Payment Pending",
+        "Paid",
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Approved or paid invoices cannot be matched again."
+            ),
+        )
+
+    if invoice.procurement_purchase_order_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Link the invoice to a Purchase Order "
+                "before matching."
+            ),
+        )
+
+    matching_service = MatchingService(db)
+
+    result = matching_service.match_invoice_with_po(
+        invoice_id=invoice_id,
+        performed_by_id=current_user.id,
+    )
+
+    return result

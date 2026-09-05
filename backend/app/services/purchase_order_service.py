@@ -49,52 +49,13 @@ class PurchaseOrderService:
         self.db = db
 
     # ==========================================================
-    # Get Purchase Order by Number
-    # ==========================================================
-
-    def get_purchase_order_by_number(
-        self,
-        po_number: str,
-    ) -> Optional[ProcurementPurchaseOrder]:
-
-        if not po_number:
-            return None
-
-        return (
-            self.db.query(ProcurementPurchaseOrder)
-            .options(
-                joinedload(
-                    ProcurementPurchaseOrder.line_items
-                )
-            )
-            .filter(
-                ProcurementPurchaseOrder.po_number == po_number
-            )
-            .first()
-    )
-    # ==========================================================
-    # Get All Purchase Orders
-    # ==========================================================
-
-    def get_all_purchase_orders(
-        self,
-    ) -> List[ProcurementPurchaseOrder]:
-
-        return (
-            self.db.query(ProcurementPurchaseOrder)
-            .order_by(
-                ProcurementPurchaseOrder.id.desc()
-            )
-            .all()
-        )
-
-    # ==========================================================
-    # Get Purchase Order by ID
+    # Validate Purchase Order Ownership
     # ==========================================================
 
     def _get_required(
         self,
         po_id: int,
+        user_id: int | None = None,
     ) -> ProcurementPurchaseOrder:
 
         purchase_order = (
@@ -110,7 +71,61 @@ class PurchaseOrderService:
                 "Purchase Order not found."
             )
 
+        if (
+            user_id is not None
+            and purchase_order.created_by_id != user_id
+        ):
+            raise ValueError(
+                "You do not have permission to access this Purchase Order."
+            )
+
         return purchase_order
+
+    # ==========================================================
+    # Get Purchase Order by Number
+    # ==========================================================
+
+    def get_purchase_order_by_number(
+        self,
+        po_number: str,
+        user_id: int,
+    ) -> Optional[ProcurementPurchaseOrder]:
+
+        if not po_number:
+            return None
+
+        return (
+            self.db.query(ProcurementPurchaseOrder)
+            .options(
+                joinedload(
+                    ProcurementPurchaseOrder.line_items
+                )
+            )
+            .filter(
+                ProcurementPurchaseOrder.po_number == po_number,
+                ProcurementPurchaseOrder.created_by_id == user_id,
+            )
+            .first()
+    )
+    # ==========================================================
+    # Get All Purchase Orders
+    # ==========================================================
+
+    def get_all_purchase_orders(
+        self,
+        user_id: int,
+    ) -> List[ProcurementPurchaseOrder]:
+
+        return (
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.created_by_id == user_id,
+            )
+            .order_by(
+                ProcurementPurchaseOrder.id.desc()
+            )
+            .all()
+        )
 
     # ==========================================================
     # Purchase Order Status Transition
@@ -123,16 +138,10 @@ class PurchaseOrderService:
         user_id: int,
     ) -> Optional[ProcurementPurchaseOrder]:
 
-        purchase_order = (
-            self.db.query(ProcurementPurchaseOrder)
-            .filter(
-                ProcurementPurchaseOrder.id == po_id
-            )
-            .first()
+        purchase_order = self._get_required(
+            po_id=po_id,
+            user_id=user_id,
         )
-
-        if purchase_order is None:
-            return None
 
         allowed_transitions = {
             "Created": {
@@ -242,7 +251,8 @@ class PurchaseOrderService:
             )
 
         purchase_order = self._get_required(
-            po_id
+            po_id,
+            user_id=user_id,
         )
 
         if purchase_order.status != "Pending Approval":
@@ -283,7 +293,8 @@ class PurchaseOrderService:
     ) -> ProcurementPurchaseOrder:
 
         purchase_order = self._get_required(
-            po_id
+            po_id,
+            user_id=user_id,
         )
 
         if purchase_order.status != "Approved":
@@ -321,7 +332,8 @@ class PurchaseOrderService:
             )
 
         purchase_order = self._get_required(
-            po_id
+            po_id,
+            user_id=user_id,
         )
 
         if purchase_order.status != "Sent":
@@ -403,12 +415,14 @@ class PurchaseOrderService:
     def delete_purchase_order(
         self,
         po_id: int,
+        user_id: int,
     ) -> bool:
 
         purchase_order = (
             self.db.query(ProcurementPurchaseOrder)
             .filter(
-                ProcurementPurchaseOrder.id == po_id
+                ProcurementPurchaseOrder.id == po_id,
+                ProcurementPurchaseOrder.created_by_id == user_id,
             )
             .first()
         )
@@ -434,7 +448,8 @@ class PurchaseOrderService:
         purchase_requisition = (
             self.db.query(PurchaseRequisition)
             .filter(
-                PurchaseRequisition.id == pr_id
+                PurchaseRequisition.id == pr_id,
+                PurchaseRequisition.requester_id == user_id,
             )
             .first()
         )
