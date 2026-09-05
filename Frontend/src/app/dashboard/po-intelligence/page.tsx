@@ -3,12 +3,23 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+interface POIntelligence {
+  total_pos: number;
+  po_value: number;
+  open_pos: number;
+  closed_pos: number;
+  cancelled_pos: number;
+  pending_approvals: number;
+  average_po_creation_time: number;
+  average_po_approval_time: number;
+  po_to_invoice_conversion_ratio: number;
+  average_po_aging: number;
+  po_value_by_department: Record<string, number>;
+  po_value_by_vendor: Record<string, number>;
+}
+
 interface DashboardOverview {
-  kpis: {
-    total_purchase_orders: number;
-    total_po_value: number;
-  };
-  purchase_order_status: Record<string, number>;
+  po_intelligence: POIntelligence;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -16,9 +27,15 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 async function getDashboardOverview(): Promise<DashboardOverview> {
   const token = localStorage.getItem("access_token");
 
+  if (!token) {
+    throw new Error("Authentication token not found.");
+  }
+
   const response = await fetch(`${API_URL}/dashboard/overview`, {
+    method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     cache: "no-store",
   });
@@ -58,135 +75,136 @@ export default function POIntelligencePage() {
     return <ErrorState message={error} />;
   }
 
-  const statuses = data?.purchase_order_status ?? {};
+  const po = data?.po_intelligence;
 
-  const openPOs =
-    (statuses["Created"] ?? 0) +
-    (statuses["Pending Approval"] ?? 0) +
-    (statuses["Approved"] ?? 0) +
-    (statuses["Sent"] ?? 0) +
-    (statuses["Vendor Accepted"] ?? 0);
-
-  const pendingApprovals =
-    statuses["Pending Approval"] ?? 0;
-
-  const closedPOs =
-    statuses["Closed"] ?? 0;
-
-  const cancelledPOs =
-    statuses["Cancelled"] ?? 0;
+  if (!po) {
+    return (
+      <ErrorState message="PO Intelligence data is not available." />
+    );
+  }
 
   return (
     <main className="min-h-screen bg-surface pt-6 pb-12">
       <div className="max-w-container-max mx-auto px-margin-desktop">
-
         <Header />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card
             title="Total POs"
-            value={data?.kpis.total_purchase_orders ?? 0}
+            value={po.total_pos}
           />
 
           <Card
             title="PO Value"
-            value={formatCurrency(
-              data?.kpis.total_po_value ?? 0
-            )}
+            value={formatCurrency(po.po_value)}
           />
 
           <Card
             title="Open POs"
-            value={openPOs}
+            value={po.open_pos}
           />
 
           <Card
             title="Closed POs"
-            value={closedPOs}
+            value={po.closed_pos}
           />
 
           <Card
             title="Cancelled POs"
-            value={cancelledPOs}
+            value={po.cancelled_pos}
           />
 
           <Card
             title="Pending Approvals"
-            value={pendingApprovals}
+            value={po.pending_approvals}
           />
 
           <Card
             title="Average PO Creation Time"
-            value="API data required"
+            value={formatDuration(po.average_po_creation_time)}
           />
 
           <Card
-            title="PO Approval Time"
-            value="API data required"
+            title="Average PO Approval Time"
+            value={formatDuration(po.average_po_approval_time)}
           />
-
         </div>
 
         <section className="mt-8 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6">
-
-          <h2 className="text-xl font-semibold text-on-surface">
-            Purchase Order Status
-          </h2>
-
-          <div className="mt-5 space-y-3">
-
-            {Object.entries(statuses).map(
-              ([status, count]) => (
-                <div
-                  key={status}
-                  className="flex justify-between border-b border-outline-variant/10 pb-3"
-                >
-                  <span>{status}</span>
-
-                  <span className="font-semibold text-primary">
-                    {count}
-                  </span>
-                </div>
-              )
-            )}
-
-          </div>
-
-        </section>
-
-        <section className="mt-6 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6">
-
           <h2 className="text-xl font-semibold text-on-surface">
             PO Analytics
           </h2>
 
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <Info
               label="PO-to-Invoice Conversion"
-              value="Additional API data required"
+              value={`${po.po_to_invoice_conversion_ratio.toFixed(2)}%`}
             />
 
             <Info
-              label="PO Aging"
-              value="Additional API data required"
+              label="Average PO Aging"
+              value={formatDuration(po.average_po_aging)}
             />
-
-            <Info
-              label="PO Value by Department"
-              value="Additional API data required"
-            />
-
-            <Info
-              label="PO Value by Vendor"
-              value="Additional API data required"
-            />
-
           </div>
-
         </section>
 
+        <section className="mt-6 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6">
+          <h2 className="text-xl font-semibold text-on-surface">
+            PO Value by Department
+          </h2>
+
+          <div className="mt-5 space-y-3">
+            {Object.entries(po.po_value_by_department).length === 0 ? (
+              <p className="text-on-surface-variant">
+                No department data available.
+              </p>
+            ) : (
+              Object.entries(po.po_value_by_department).map(
+                ([department, value]) => (
+                  <div
+                    key={department}
+                    className="flex justify-between border-b border-outline-variant/10 pb-3"
+                  >
+                    <span>{department}</span>
+
+                    <span className="font-semibold text-primary">
+                      {formatCurrency(value)}
+                    </span>
+                  </div>
+                )
+              )
+            )}
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6">
+          <h2 className="text-xl font-semibold text-on-surface">
+            PO Value by Vendor
+          </h2>
+
+          <div className="mt-5 space-y-3">
+            {Object.entries(po.po_value_by_vendor).length === 0 ? (
+              <p className="text-on-surface-variant">
+                No vendor data available.
+              </p>
+            ) : (
+              Object.entries(po.po_value_by_vendor).map(
+                ([vendor, value]) => (
+                  <div
+                    key={vendor}
+                    className="flex justify-between border-b border-outline-variant/10 pb-3"
+                  >
+                    <span>{vendor}</span>
+
+                    <span className="font-semibold text-primary">
+                      {formatCurrency(value)}
+                    </span>
+                  </div>
+                )
+              )
+            )}
+          </div>
+        </section>
       </div>
     </main>
   );
@@ -279,4 +297,25 @@ function formatCurrency(value: number) {
     currency: "USD",
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatDuration(seconds: number) {
+  if (!seconds || seconds < 0) {
+    return "0 days";
+  }
+
+  const days = seconds / 86400;
+
+  if (days >= 1) {
+    return `${days.toFixed(2)} days`;
+  }
+
+  const hours = seconds / 3600;
+
+  if (hours >= 1) {
+    return `${hours.toFixed(2)} hours`;
+  }
+
+  const minutes = seconds / 60;
+  return `${minutes.toFixed(2)} minutes`;
 }

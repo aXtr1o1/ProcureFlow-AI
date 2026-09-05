@@ -47,6 +47,17 @@ def run_schema_migrations(engine) -> None:
                 )
             )
 
+        # Add issue_date to invoices
+        if "issue_date" not in invoice_columns:
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE invoices
+                    ADD COLUMN issue_date DATE
+                    """
+                )
+            )
+
         # ==================================================
         # Purchase Requisition table migrations
         # ==================================================
@@ -65,6 +76,39 @@ def run_schema_migrations(engine) -> None:
                     """
                     ALTER TABLE purchase_requisitions
                     ADD COLUMN category VARCHAR(255)
+                    """
+                )
+            )
+
+        # ==================================================
+        # Goods Receipt table migrations
+        # ==================================================
+
+        goods_receipt_columns = {
+            row[1]
+            for row in connection.execute(
+                text("PRAGMA table_info(goods_receipts)")
+            )
+        }
+
+        # Expected delivery date
+        if "expected_delivery_date" not in goods_receipt_columns:
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE goods_receipts
+                    ADD COLUMN expected_delivery_date DATETIME
+                    """
+                )
+            )
+
+        # Actual received date
+        if "received_date" not in goods_receipt_columns:
+            connection.execute(
+                text(
+                    """
+                    ALTER TABLE goods_receipts
+                    ADD COLUMN received_date DATETIME
                     """
                 )
             )
