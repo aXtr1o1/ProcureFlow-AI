@@ -167,11 +167,14 @@ def _persist_validated_invoice(
         remarks="OCR extraction completed successfully.",
     )
 
-    invoice.processing_status = "Validation Completed"
+    invoice.processing_status = "Pending"
     invoice_service.save_status_log(
         invoice=invoice,
-        status="Validation Completed",
-        remarks="Invoice validation completed successfully.",
+        status="Pending",
+        remarks=(
+            "Invoice validation completed. "
+            "Pending Purchase Order linking."
+        ),
     )
 
     line_items = usd_data.get("line_items", []) or []

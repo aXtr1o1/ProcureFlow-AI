@@ -1,16 +1,20 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# SQLite Database URL
-DATABASE_URL = "sqlite:///./invoice_po.db"
+from app.core.config import settings
 
-# Create SQLite Engine
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={
+DATABASE_URL = settings.DATABASE_URL
+
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {
         "check_same_thread": False,
         "timeout": 30,
-    },
+    }
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
 )
 
 # Create Session

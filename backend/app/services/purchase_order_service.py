@@ -1,6 +1,7 @@
-import uuid
+from datetime import datetime
 from typing import Optional, List
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.database.models import (
@@ -492,8 +493,17 @@ class PurchaseOrderService:
                 "for this Purchase Requisition."
             )
 
+        user_po_count = (
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.created_by_id
+                == user_id
+            )
+            .count()
+        )
+
         po_number = (
-            f"PO-{uuid.uuid4().hex[:8].upper()}"
+            f"PO-U{user_id}-{(user_po_count + 1):05d}"
         )
 
         # ==========================================================
@@ -523,6 +533,47 @@ class PurchaseOrderService:
         converted_data = convert_invoice_amounts_to_usd(
             conversion_data
         )
+
+        # ==========================================================
+        # Reject duplicate PO (same value + same date)
+        # ==========================================================
+
+        proposed_total = round(
+            float(converted_data["total_amount"] or 0),
+            2,
+        )
+        today = datetime.utcnow().date()
+
+        duplicate_po = (
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                func.date(
+                    ProcurementPurchaseOrder.created_at
+                )
+                == today,
+                func.round(
+                    ProcurementPurchaseOrder.total_amount,
+                    2,
+                )
+                == proposed_total,
+                ProcurementPurchaseOrder.status.notin_(
+                    [
+                        "Cancelled",
+                        "Rejected",
+                        "Vendor Rejected",
+                    ]
+                ),
+            )
+            .first()
+        )
+
+        if duplicate_po:
+            raise ValueError(
+                "Duplicate Purchase Order detected. "
+                f"PO {duplicate_po.po_number} already exists "
+                f"with the same value ({proposed_total}) "
+                f"and date ({today})."
+            )
 
         # ==========================================================
         # Create Purchase Order in USD

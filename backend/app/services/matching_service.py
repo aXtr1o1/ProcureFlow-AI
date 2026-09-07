@@ -729,10 +729,8 @@ class MatchingService:
         remarks: str | None = None,
     ):
         """
-        Mismatch approval override is disabled.
-
-        An invoice must be completely matched before it
-        can proceed to invoice approval.
+        Manually approve match mismatches (authorized override)
+        and send the invoice for approval.
         """
 
         invoice = (
@@ -744,10 +742,49 @@ class MatchingService:
         if invoice is None:
             raise ValueError("Invoice not found.")
 
-        raise ValueError(
-            "Invoice cannot be approved because the "
-            "PO and invoice are not completely matched."
+        if invoice.processing_status != "Review Required":
+            raise ValueError(
+                "Only invoices requiring manual review "
+                "can be override-approved."
+            )
+
+        invoice.processing_status = "Approval Pending"
+
+        open_exception = (
+            self.db.query(InvoiceException)
+            .filter(
+                InvoiceException.invoice_id == invoice.id,
+                InvoiceException.status == "Open",
+            )
+            .first()
         )
+
+        if open_exception is not None:
+            open_exception.status = "Override Approved"
+            open_exception.resolution_remarks = (
+                remarks
+                or "Match mismatches approved via authorized override."
+            )
+            open_exception.resolved_by_id = performed_by_id
+            open_exception.resolved_at = datetime.utcnow()
+
+        self.db.add(
+            InvoiceStatusLog(
+                invoice_id=invoice.id,
+                status="Approval Pending",
+                remarks=(
+                    remarks
+                    or "Match mismatches approved via override. "
+                    "Invoice sent for approval."
+                ),
+                updated_by="System",
+            )
+        )
+
+        self.db.commit()
+        self.db.refresh(invoice)
+
+        return invoice
 
     # ==========================================================
     # Reject Invoice During Match Review

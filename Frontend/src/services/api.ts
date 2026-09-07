@@ -136,6 +136,15 @@ async function parseApiResponse(response: Response) {
 function handleUnauthorized(response: Response) {
   if (response.status === 401) {
     localStorage.removeItem("access_token");
+    localStorage.removeItem("aiInvoicePo.session");
+
+    if (
+      typeof window !== "undefined" &&
+      !window.location.pathname.startsWith("/login")
+    ) {
+      window.location.href = "/login";
+    }
+
     throw new Error("Session expired. Please login again.");
   }
 
@@ -362,10 +371,7 @@ export async function getInvoice(id: number | string) {
   console.log("GET Invoice Status:", response.status);
   console.log("GET Invoice Response:", data);
 
-  if (response.status === 401) {
-    localStorage.removeItem("access_token");
-    throw new Error("Session expired. Please login again.");
-  }
+  handleUnauthorized(response);
 
   if (response.status === 403) {
     throw new Error(
@@ -782,10 +788,7 @@ export async function getPurchaseOrders(): Promise<PurchaseOrder[]> {
   console.log("Purchase Orders Response:", response.status);
   console.log("Purchase Orders Data:", data);
 
-  if (response.status === 401) {
-    localStorage.removeItem("access_token");
-    throw new Error("Session expired. Please login again.");
-  }
+  handleUnauthorized(response);
 
   if (!response.ok) {
     const detail = data?.detail;
@@ -848,10 +851,7 @@ export async function linkInvoiceToPurchaseOrder(
   console.log("Link PO Response:", response.status);
   console.log("Link PO Data:", data);
 
-  if (response.status === 401) {
-    localStorage.removeItem("access_token");
-    throw new Error("Session expired. Please login again.");
-  }
+  handleUnauthorized(response);
 
   if (!response.ok) {
     const detail = data?.detail;
@@ -1013,10 +1013,7 @@ export async function createPayment(payment: {
 
   const data = await response.json();
 
-  if (response.status === 401) {
-    localStorage.removeItem("access_token");
-    throw new Error("Session expired. Please login again.");
-  }
+  handleUnauthorized(response);
 
   if (!response.ok) {
     throw new Error(

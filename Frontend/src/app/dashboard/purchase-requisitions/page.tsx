@@ -30,23 +30,14 @@ export default function PurchaseRequisitionsPage() {
 
   return (
     <main className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">
-            Purchase Requisitions
-          </h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">
+          Purchase Requisitions
+        </h1>
 
-          <p className="text-sm text-gray-500">
-            Manage PRs and procurement approvals.
-          </p>
-        </div>
-
-        <Link
-          href="/dashboard/purchase-requisitions/create"
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          Create Purchase Requisition
-        </Link>
+        <p className="text-sm text-gray-500">
+          Manage PRs and procurement approvals.
+        </p>
       </div>
 
       {loading && (

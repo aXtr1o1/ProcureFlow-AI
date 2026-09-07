@@ -238,16 +238,47 @@ class DashboardService:
         # Invoices
         # ------------------------------------------------------
 
-        invoices_processed = self._count(Invoice)
-
         pending_invoice_statuses = [
             "Uploaded",
             "Processing",
-            "Approval Pending",
+            "OCR Completed",
+            "Validation Completed",
             "Validation Pending",
             "Pending",
+            "PO Linked",
+            "Review Required",
+            "Approval Pending",
             "Pending Approval",
         ]
+
+        processed_invoice_statuses = [
+            "Paid",
+            "Approved",
+            "Processed",
+            "PO Completed",
+            "PO Generated",
+        ]
+
+        invoices_processed_query = (
+            self.db.query(
+                func.count(Invoice.id)
+            )
+            .filter(
+                Invoice.processing_status.in_(
+                    processed_invoice_statuses
+                )
+            )
+        )
+
+        invoices_processed_query = self._apply_user_filter(
+            invoices_processed_query,
+            Invoice,
+        )
+
+        invoices_processed = (
+            invoices_processed_query.scalar()
+            or 0
+        )
 
         pending_invoices_query = (
             self.db.query(

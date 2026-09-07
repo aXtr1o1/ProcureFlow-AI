@@ -5,7 +5,7 @@ import {
   useState,
 } from "react";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import {
   createPurchaseRequisition,
@@ -19,9 +19,22 @@ interface Line {
 
 export default function CreatePRPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const initialBusinessNeedId =
+    searchParams.get("businessNeedId") ||
+    searchParams.get("business_need_id") ||
+    "";
+
+  const businessNeedNumber =
+    searchParams.get("businessNeedNumber") ||
+    searchParams.get("business_need_number") ||
+    "";
 
   const [businessNeedId, setBusinessNeedId] =
-    useState("");
+    useState(initialBusinessNeedId);
+
+  const businessNeedLocked = Boolean(initialBusinessNeedId);
 
   const [title, setTitle] =
     useState("");
@@ -143,20 +156,36 @@ export default function CreatePRPage() {
       >
         <div>
           <label className="mb-1 block text-sm font-medium">
-            Business Need ID
+            Business Need
           </label>
 
-          <input
-            required
-            type="number"
-            value={businessNeedId}
-            onChange={(e) =>
-              setBusinessNeedId(
-                e.target.value
-              )
-            }
-            className="w-full rounded-lg border px-3 py-2"
-          />
+          {businessNeedLocked ? (
+            <>
+              <input
+                readOnly
+                type="text"
+                value={
+                  businessNeedNumber ||
+                  `ID ${businessNeedId}`
+                }
+                className="w-full rounded-lg border bg-gray-50 px-3 py-2 text-gray-700"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Filled from the selected Business Need.
+              </p>
+            </>
+          ) : (
+            <input
+              required
+              type="number"
+              value={businessNeedId}
+              onChange={(e) =>
+                setBusinessNeedId(e.target.value)
+              }
+              placeholder="Enter Business Need ID"
+              className="w-full rounded-lg border px-3 py-2"
+            />
+          )}
         </div>
 
         <div>
