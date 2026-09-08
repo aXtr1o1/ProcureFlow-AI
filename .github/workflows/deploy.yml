@@ -59,7 +59,7 @@ jobs:
             pip install --upgrade pip
 
             echo "Installing dependencies..."
-            uv pip install -r backend/requirements.txt
+            /home/ubuntu/.local/bin/uv pip install -r backend/requirements.txt
             cd backend
             echo "Restarting service..."
             sudo systemctl daemon-reload
