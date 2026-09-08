@@ -59,10 +59,8 @@ jobs:
             pip install --upgrade pip
 
             echo "Installing dependencies..."
-            python -m pip install -r backend/requirements.txt
+            uv pip install -r backend/requirements.txt
             cd backend
-            # Keep invoice_po.db so users and data persist across deploys
-            python3 -m app.database.init_db
             echo "Restarting service..."
             sudo systemctl daemon-reload
             sudo systemctl restart backend
