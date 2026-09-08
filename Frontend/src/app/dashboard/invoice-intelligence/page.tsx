@@ -83,12 +83,6 @@ export default function InvoiceIntelligencePage() {
     invoiceIntelligence?.total_invoices_received ??
     0;
 
-  const duplicateInvoices =
-    invoiceIntelligence?.duplicate_invoices ??
-    statuses["Duplicate"] ??
-    statuses["Duplicate Invoice"] ??
-    0;
-
   const extractionFailed =
     invoiceIntelligence?.extraction_failed ??
     statuses["Extraction Failed"] ??
@@ -160,11 +154,6 @@ export default function InvoiceIntelligencePage() {
           <MetricCard
             title="Extraction Failed"
             value={extractionFailed}
-          />
-
-          <MetricCard
-            title="Duplicate Invoices"
-            value={duplicateInvoices}
           />
 
           <MetricCard

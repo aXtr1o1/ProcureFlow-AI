@@ -238,16 +238,47 @@ class DashboardService:
         # Invoices
         # ------------------------------------------------------
 
-        invoices_processed = self._count(Invoice)
-
         pending_invoice_statuses = [
             "Uploaded",
             "Processing",
-            "Approval Pending",
+            "OCR Completed",
+            "Validation Completed",
             "Validation Pending",
             "Pending",
+            "PO Linked",
+            "Review Required",
+            "Approval Pending",
             "Pending Approval",
         ]
+
+        processed_invoice_statuses = [
+            "Paid",
+            "Approved",
+            "Processed",
+            "PO Completed",
+            "PO Generated",
+        ]
+
+        invoices_processed_query = (
+            self.db.query(
+                func.count(Invoice.id)
+            )
+            .filter(
+                Invoice.processing_status.in_(
+                    processed_invoice_statuses
+                )
+            )
+        )
+
+        invoices_processed_query = self._apply_user_filter(
+            invoices_processed_query,
+            Invoice,
+        )
+
+        invoices_processed = (
+            invoices_processed_query.scalar()
+            or 0
+        )
 
         pending_invoices_query = (
             self.db.query(
@@ -2486,25 +2517,17 @@ class DashboardService:
 
     def _get_pending_payment_value(self) -> float:
         """
-        Calculate the total pending payment value.
+        Calculate pending payment as unpaid invoice value:
 
-        It first checks Payment records. If no pending Payment
-        records exist, it checks invoices whose processing status
-        is Payment Pending.
+            max(0, total invoice value - total paid amount)
         """
 
-        pending_payment_statuses = [
-            "Pending",
-            "Payment Pending",
-            "Pending Payment",
-            "Payment Pending Approval",
-        ]
+        total_invoice_value = self._sum(
+            Invoice,
+            Invoice.total_amount,
+        )
 
-        # ------------------------------------------------------
-        # Check Payment table
-        # ------------------------------------------------------
-
-        payment_query = (
+        total_paid_amount_query = (
             self.db.query(
                 func.coalesce(
                     func.sum(Payment.amount),
@@ -2512,85 +2535,23 @@ class DashboardService:
                 )
             )
             .filter(
-                Payment.status.in_(
-                    pending_payment_statuses
-                )
+                Payment.status == "Paid"
             )
         )
 
-        payment_query = self._apply_user_filter(
-            payment_query,
+        total_paid_amount_query = self._apply_user_filter(
+            total_paid_amount_query,
             Payment,
         )
 
-        pending_payment_value = (
-            payment_query.scalar()
+        total_paid_amount = (
+            total_paid_amount_query.scalar()
             or 0
         )
 
-        # ------------------------------------------------------
-        # Check whether pending Payment records exist
-        # ------------------------------------------------------
-
-        pending_payment_count_query = (
-            self.db.query(
-                func.count(Payment.id)
-            )
-            .filter(
-                Payment.status.in_(
-                    pending_payment_statuses
-                )
-            )
-        )
-
-        pending_payment_count_query = self._apply_user_filter(
-            pending_payment_count_query,
-            Payment,
-        )
-
-        pending_payment_count = (
-            pending_payment_count_query.scalar()
-            or 0
-        )
-
-        # ------------------------------------------------------
-        # Fallback to invoices marked as Payment Pending
-        # ------------------------------------------------------
-
-        if pending_payment_count == 0:
-
-            pending_invoice_statuses = [
-                "Payment Pending",
-                "Pending Payment",
-                "Payment Pending Approval",
-            ]
-
-            invoice_query = (
-                self.db.query(
-                    func.coalesce(
-                        func.sum(Invoice.total_amount),
-                        0,
-                    )
-                )
-                .filter(
-                    Invoice.processing_status.in_(
-                        pending_invoice_statuses
-                    )
-                )
-            )
-
-            invoice_query = self._apply_user_filter(
-                invoice_query,
-                Invoice,
-            )
-
-            pending_payment_value = (
-                invoice_query.scalar()
-                or 0
-            )
-
-        return float(
-            pending_payment_value
+        return max(
+            0.0,
+            float(total_invoice_value) - float(total_paid_amount),
         )
 
     # ==========================================================

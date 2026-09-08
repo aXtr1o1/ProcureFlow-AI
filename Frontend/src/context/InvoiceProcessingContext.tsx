@@ -45,7 +45,7 @@ export const STEPS: Step[] = [
     id: 3,
     title: "Validation",
     description: "Invoice data is checked for completeness and validity",
-    statuses: ["Validation Completed"],
+    statuses: ["Validation Completed", "Pending"],
   },
 ];
 
@@ -53,6 +53,7 @@ export const STATUS_LABEL: Record<string, string> = {
   Uploaded: "Uploaded",
   "OCR Completed": "OCR Completed",
   "Validation Completed": "Validation Completed",
+  Pending: "Pending",
   Duplicate: "Duplicate",
   Failed: "Failed",
   Matched: "Matched",
@@ -65,6 +66,7 @@ export const STATUS_COLOR: Record<string, string> = {
   Uploaded: "text-primary",
   "OCR Completed": "text-blue-600",
   "Validation Completed": "text-green-700",
+  Pending: "text-amber-700",
   Duplicate: "text-yellow-700",
   Failed: "text-error",
   Matched: "text-green-700",
@@ -77,6 +79,7 @@ export const STATUS_BG_COLOR: Record<string, string> = {
   Uploaded: "bg-primary/10",
   "OCR Completed": "bg-blue-50",
   "Validation Completed": "bg-green-50",
+  Pending: "bg-amber-50",
   Duplicate: "bg-yellow-50",
   Failed: "bg-red-50",
   Matched: "bg-green-50",
@@ -91,6 +94,7 @@ export const STATUS_ICON_COLOR: Record<string, string> = {
   Uploaded: "text-primary",
   "OCR Completed": "text-blue-600",
   "Validation Completed": "text-green-600",
+  Pending: "text-amber-600",
   Duplicate: "text-yellow-600",
   Failed: "text-error",
   Matched: "text-green-600",
@@ -103,6 +107,7 @@ export const STATUS_ICON_COLOR: Record<string, string> = {
 
 const TERMINAL_UPLOAD_STATUSES = new Set([
   "Validation Completed",
+  "Pending",
   "Duplicate",
   "Failed",
 ]);
@@ -335,9 +340,10 @@ export function InvoiceProcessingProvider({ children }: { children: ReactNode })
           return;
         }
 
-        if (status === "Validation Completed") {
+        if (status === "Validation Completed" || status === "Pending") {
           applyStatus("OCR Completed");
           applyStatus("Validation Completed");
+          applyStatus("Pending");
           setCompleted(true);
           setRunning(false);
           runningRef.current = false;

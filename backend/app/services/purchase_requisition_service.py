@@ -35,6 +35,24 @@ class PurchaseRequisitionService:
         if business_need.status in {"Rejected", "Cancelled", "Closed"}:
             raise HTTPException(status_code=409, detail="A PR cannot be created for this Business Need.")
 
+        existing_pr = (
+            self.db.query(PurchaseRequisition)
+            .filter(
+                PurchaseRequisition.business_need_id == business_need.id
+            )
+            .first()
+        )
+
+        if existing_pr is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"A Purchase Requisition already exists for this "
+                    f"Business Need ({existing_pr.pr_number}). "
+                    f"Only one PR is allowed per Business Need."
+                ),
+            )
+
         pr = PurchaseRequisition(
             pr_number="PENDING",
             business_need_id=business_need.id,

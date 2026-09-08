@@ -185,7 +185,7 @@ export default function BusinessNeedDetailsPage() {
 
         {item.status === "Submitted" && (
           <Link
-            href={`/dashboard/purchase-requisitions/create?businessNeedId=${item.id}`}
+            href={`/dashboard/purchase-requisitions/create?businessNeedId=${item.id}&businessNeedNumber=${encodeURIComponent(item.need_number)}`}
             className="rounded-lg bg-blue-600 px-4 py-2 text-white"
           >
             Create Purchase Requisition

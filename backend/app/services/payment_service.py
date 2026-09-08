@@ -154,17 +154,19 @@ class PaymentService:
         )
 
         total_paid = sum(
-            payment.amount
+            float(payment.amount or 0)
             for payment in existing_paid_amount
         )
 
-        remaining_amount = (
-            float(invoice.total_amount or 0) - total_paid
+        remaining_amount = round(
+            float(invoice.total_amount or 0) - total_paid,
+            2,
         )
+        request_amount = round(float(request.amount), 2)
 
-        if request.amount > remaining_amount:
+        if request_amount > remaining_amount:
             raise ValueError(
-                f"Payment amount exceeds the remaining invoice amount "
+                "Payment amount exceeds the remaining invoice amount "
                 f"of {remaining_amount:.2f}."
             )
 
@@ -199,7 +201,7 @@ class PaymentService:
             invoice_id=request.invoice_id,
             payment_reference=payment_reference,
             payment_method=request.payment_method,
-            amount=request.amount,
+            amount=request_amount,
             currency=invoice.currency or "USD",
             status="Pending",
             payment_date=request.payment_date,
@@ -465,37 +467,50 @@ class PaymentService:
             .all()
         )
 
-        invoice_total = float(
-            invoice.total_amount or 0
+        invoice_total = round(
+            float(invoice.total_amount or 0),
+            2,
         )
 
-        total_paid = sum(
-            payment.amount
-            for payment in payments
-            if payment.status == "Paid"
+        total_paid = round(
+            sum(
+                float(payment.amount or 0)
+                for payment in payments
+                if payment.status == "Paid"
+            ),
+            2,
         )
 
-        total_pending = sum(
-            payment.amount
-            for payment in payments
-            if payment.status == "Pending"
+        total_pending = round(
+            sum(
+                float(payment.amount or 0)
+                for payment in payments
+                if payment.status == "Pending"
+            ),
+            2,
         )
 
-        total_failed = sum(
-            payment.amount
-            for payment in payments
-            if payment.status == "Failed"
+        total_failed = round(
+            sum(
+                float(payment.amount or 0)
+                for payment in payments
+                if payment.status == "Failed"
+            ),
+            2,
         )
 
-        total_cancelled = sum(
-            payment.amount
-            for payment in payments
-            if payment.status == "Cancelled"
+        total_cancelled = round(
+            sum(
+                float(payment.amount or 0)
+                for payment in payments
+                if payment.status == "Cancelled"
+            ),
+            2,
         )
 
-        remaining_amount = max(
-            invoice_total - total_paid,
-            0,
+        remaining_amount = round(
+            max(invoice_total - total_paid, 0),
+            2,
         )
 
         if remaining_amount == 0 and invoice_total > 0:

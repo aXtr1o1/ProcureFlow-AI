@@ -121,12 +121,12 @@ export default function POIntelligencePage() {
 
           <Card
             title="Average PO Creation Time"
-            value={formatDuration(po.average_po_creation_time)}
+            value={formatDurationHours(po.average_po_creation_time)}
           />
 
           <Card
             title="Average PO Approval Time"
-            value={formatDuration(po.average_po_approval_time)}
+            value={formatDurationHours(po.average_po_approval_time)}
           />
         </div>
 
@@ -318,4 +318,12 @@ function formatDuration(seconds: number) {
 
   const minutes = seconds / 60;
   return `${minutes.toFixed(2)} minutes`;
+}
+function formatDurationHours(seconds: number) {
+  if (!seconds || seconds < 0) {
+    return "0 hours";
+  }
+
+  const hours = seconds / 3600;
+  return `${hours.toFixed(2)} hours`;
 }
