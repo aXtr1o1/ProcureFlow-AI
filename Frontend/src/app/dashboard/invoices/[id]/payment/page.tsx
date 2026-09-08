@@ -171,7 +171,10 @@ export default function InvoicePaymentPage() {
     const remainingAmount =
       summary?.remaining_amount ?? invoice.total_amount;
 
-    if (paymentAmount > remainingAmount) {
+    const paymentCents = Math.round(paymentAmount * 100);
+    const remainingCents = Math.round(Number(remainingAmount) * 100);
+
+    if (paymentCents > remainingCents) {
       setError(
         "Payment amount cannot exceed the remaining invoice amount."
       );
