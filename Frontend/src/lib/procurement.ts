@@ -586,6 +586,18 @@ export type GoodsReceiptStatus =
   | "Rejected";
 
 /* ----------------------------------------------------------
+   Get Goods Receipts for a Purchase Order
+---------------------------------------------------------- */
+
+export function getGoodsReceiptsForPurchaseOrder(
+  poId: number
+) {
+  return request<GoodsReceipt[]>(
+    `/goods-receipts/purchase-order/${poId}`
+  );
+}
+
+/* ----------------------------------------------------------
    Get all Goods Receipts
 ---------------------------------------------------------- */
 

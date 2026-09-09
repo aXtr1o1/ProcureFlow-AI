@@ -1962,15 +1962,8 @@ class DashboardService:
 
     def get_spend_analytics(self) -> dict:
 
-        total_po_value = self._sum(
-            ProcurementPurchaseOrder,
-            ProcurementPurchaseOrder.total_amount,
-        )
-
-        total_invoice_value = self._sum(
-            Invoice,
-            Invoice.total_amount,
-        )
+        total_po_value = self._get_approved_po_value()
+        total_invoice_value = self._get_approved_invoice_value()
 
         total_paid_amount_query = (
             self.db.query(
@@ -2415,15 +2408,8 @@ class DashboardService:
 
     def get_spend(self) -> dict:
 
-        total_po_value = self._sum(
-            ProcurementPurchaseOrder,
-            ProcurementPurchaseOrder.total_amount,
-        )
-
-        total_invoice_value = self._sum(
-            Invoice,
-            Invoice.total_amount,
-        )
+        total_po_value = self._get_approved_po_value()
+        total_invoice_value = self._get_approved_invoice_value()
 
         total_paid_amount_query = (
             self.db.query(
@@ -2508,44 +2494,94 @@ class DashboardService:
     # Pending Payment Helper
     # ==========================================================
 
-    def _get_pending_payment_value(self) -> float:
+    def _get_approved_po_value(self) -> float:
         """
-        Calculate pending payment as unpaid invoice value:
-
-            max(0, total invoice value - total paid amount)
+        PO spend excluding cancelled / rejected POs.
         """
 
-        total_invoice_value = self._sum(
-            Invoice,
-            Invoice.total_amount,
-        )
+        excluded_po_statuses = [
+            "Cancelled",
+            "Rejected",
+            "Vendor Rejected",
+        ]
 
-        total_paid_amount_query = (
+        query = (
             self.db.query(
                 func.coalesce(
-                    func.sum(Payment.amount),
+                    func.sum(
+                        ProcurementPurchaseOrder.total_amount
+                    ),
                     0,
                 )
             )
             .filter(
-                Payment.status == "Paid"
+                ~ProcurementPurchaseOrder.status.in_(
+                    excluded_po_statuses
+                )
             )
         )
 
-        total_paid_amount_query = self._apply_user_filter(
-            total_paid_amount_query,
-            Payment,
+        query = self._apply_user_filter(
+            query,
+            ProcurementPurchaseOrder,
         )
 
-        total_paid_amount = (
-            total_paid_amount_query.scalar()
-            or 0
+        return float(query.scalar() or 0)
+
+    def _get_approved_invoice_value(self) -> float:
+        """
+        Invoice spend after approval only
+        (Payment Pending + Paid). Rejected excluded.
+        """
+
+        query = (
+            self.db.query(
+                func.coalesce(
+                    func.sum(Invoice.total_amount),
+                    0,
+                )
+            )
+            .filter(
+                Invoice.processing_status.in_(
+                    ["Payment Pending", "Paid"]
+                )
+            )
         )
 
-        return max(
-            0.0,
-            float(total_invoice_value) - float(total_paid_amount),
+        query = self._apply_user_filter(
+            query,
+            Invoice,
         )
+
+        return float(query.scalar() or 0)
+
+    def _get_pending_payment_value(self) -> float:
+        """
+        Pending payment = sum of invoice amounts awaiting payment
+        (processing_status == "Payment Pending").
+
+        Rejected / Paid / other statuses are excluded.
+        """
+
+        pending_query = (
+            self.db.query(
+                func.coalesce(
+                    func.sum(Invoice.total_amount),
+                    0,
+                )
+            )
+            .filter(
+                Invoice.processing_status
+                == "Payment Pending"
+            )
+        )
+
+        pending_query = self._apply_user_filter(
+            pending_query,
+            Invoice,
+        )
+
+        return float(pending_query.scalar() or 0)
 
     # ==========================================================
     # Overdue Payment Helper

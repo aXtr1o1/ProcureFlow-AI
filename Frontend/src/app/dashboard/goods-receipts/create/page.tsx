@@ -14,6 +14,7 @@ import {
 import {
   createGoodsReceipt,
   getPurchaseOrder,
+  getGoodsReceiptsForPurchaseOrder,
   PurchaseOrder,
 } from "@/lib/procurement";
 
@@ -87,6 +88,21 @@ export default function CreateGoodsReceiptPage() {
         if (po.status !== "Acknowledged") {
           throw new Error(
             `Goods Receipt can only be created for an Acknowledged Purchase Order. Current status: ${po.status}`
+          );
+        }
+
+        const existingReceipts =
+          await getGoodsReceiptsForPurchaseOrder(
+            po.id
+          );
+
+        const hasAcceptedGR = existingReceipts.some(
+          (gr) => gr.status === "Accepted"
+        );
+
+        if (hasAcceptedGR) {
+          throw new Error(
+            "A valid Accepted Goods Receipt already exists for this Purchase Order. Another GR is not required — complete payment to close the PO."
           );
         }
 
