@@ -10,10 +10,10 @@ interface POIntelligence {
   closed_pos: number;
   cancelled_pos: number;
   pending_approvals: number;
-  average_po_creation_time: number;
-  average_po_approval_time: number;
+  average_po_creation_time: number | null;
+  average_po_approval_time: number | null;
   po_to_invoice_conversion_ratio: number;
-  average_po_aging: number;
+  average_po_aging: number | null;
   po_value_by_department: Record<string, number>;
   po_value_by_vendor: Record<string, number>;
 }
@@ -121,12 +121,12 @@ export default function POIntelligencePage() {
 
           <Card
             title="Average PO Creation Time"
-            value={formatDurationHours(po.average_po_creation_time)}
+            value={formatDurationOrNA(po.average_po_creation_time)}
           />
 
           <Card
             title="Average PO Approval Time"
-            value={formatDurationHours(po.average_po_approval_time)}
+            value={formatDurationOrNA(po.average_po_approval_time)}
           />
         </div>
 
@@ -143,7 +143,7 @@ export default function POIntelligencePage() {
 
             <Info
               label="Average PO Aging"
-              value={formatDuration(po.average_po_aging)}
+              value={formatDurationOrNA(po.average_po_aging)}
             />
           </div>
         </section>
@@ -300,10 +300,6 @@ function formatCurrency(value: number) {
 }
 
 function formatDuration(seconds: number) {
-  if (!seconds || seconds < 0) {
-    return "0 days";
-  }
-
   const days = seconds / 86400;
 
   if (days >= 1) {
@@ -316,14 +312,18 @@ function formatDuration(seconds: number) {
     return `${hours.toFixed(2)} hours`;
   }
 
-  const minutes = seconds / 60;
-  return `${minutes.toFixed(2)} minutes`;
-}
-function formatDurationHours(seconds: number) {
-  if (!seconds || seconds < 0) {
-    return "0 hours";
+  if (seconds >= 60) {
+    const minutes = seconds / 60;
+    return `${minutes.toFixed(2)} minutes`;
   }
 
-  const hours = seconds / 3600;
-  return `${hours.toFixed(2)} hours`;
+  return `${Math.round(seconds)} seconds`;
+}
+
+function formatDurationOrNA(seconds: number | null) {
+  if (seconds == null || seconds < 0) {
+    return "N/A";
+  }
+
+  return formatDuration(seconds);
 }

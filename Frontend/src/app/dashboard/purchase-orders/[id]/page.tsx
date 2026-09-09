@@ -12,6 +12,7 @@ import {
   sendPurchaseOrderToVendor,
   vendorAcceptPurchaseOrder,
   vendorRejectPurchaseOrder,
+  cancelPurchaseOrder,
 } from "@/lib/procurement";
 
 import StatusBadge from "@/components/procurement/StatusBadge";
@@ -470,8 +471,49 @@ export default function PurchaseOrderDetailsPage() {
 
           <p className="text-sm text-red-700">
             The vendor has rejected this Purchase
-            Order.
+            Order. You can cancel it below to close
+            this workflow.
           </p>
+        </div>
+      )}
+
+      {/* =====================================================
+          Cancel Purchase Order
+          Allowed: Created / Approved / Acknowledged /
+          Vendor Rejected -> Cancelled
+      ====================================================== */}
+
+      {[
+        "Created",
+        "Approved",
+        "Acknowledged",
+        "Vendor Rejected",
+      ].includes(po.status) && (
+        <div className="mt-6 rounded-lg border bg-white p-6">
+          <h2 className="mb-2 text-lg font-semibold">
+            Cancel Purchase Order
+          </h2>
+
+          <p className="mb-4 text-sm text-gray-500">
+            Cancel this Purchase Order. It will be
+            counted under Cancelled POs in PO
+            Intelligence.
+          </p>
+
+          <button
+            type="button"
+            disabled={actionLoading}
+            onClick={() =>
+              execute(() =>
+                cancelPurchaseOrder(po.id)
+              )
+            }
+            className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {actionLoading
+              ? "Cancelling..."
+              : "Cancel Purchase Order"}
+          </button>
         </div>
       )}
 
