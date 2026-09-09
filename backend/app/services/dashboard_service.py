@@ -39,6 +39,22 @@ class DashboardService:
         self.db = db
         self.user_id = user_id
 
+    def _duration_seconds(self, end_col, start_col):
+        """
+        Return an expression for (end - start) in seconds.
+
+        SQLite does not support PostgreSQL-style EXTRACT(epoch FROM interval),
+        so use julianday arithmetic there.
+        """
+        dialect = self.db.get_bind().dialect.name
+
+        if dialect == "sqlite":
+            return (
+                func.julianday(end_col) - func.julianday(start_col)
+            ) * 86400.0
+
+        return func.extract("epoch", end_col - start_col)
+
     def _apply_user_filter(self, query, model):
         """
         Apply the authenticated user's ownership filter.
@@ -205,7 +221,7 @@ class DashboardService:
 
         active_po_statuses = [
             "Created",
-            "Approval Pending",
+            "Pending Approval",
             "Approved",
             "Sent",
             "Acknowledged",
@@ -846,11 +862,12 @@ class DashboardService:
             )
 
         open_statuses = [
-            "Draft",
+            "Created",
             "Pending Approval",
-            "Approval Pending",
             "Approved",
-            "Partially Received",
+            "Sent",
+            "Vendor Accepted",
+            "Acknowledged",
         ]
 
         open_pos = (
@@ -871,39 +888,18 @@ class DashboardService:
         closed_pos = get_po_status_count("Closed")
         cancelled_pos = get_po_status_count("Cancelled")
 
-        # Pending approvals for the user's POs
-        pending_approvals = (
-            self.db.query(func.count(PurchaseOrderApproval.id))
-            .join(
-                ProcurementPurchaseOrder,
-                PurchaseOrderApproval.purchase_order_id
-                == ProcurementPurchaseOrder.id,
-            )
-            .join(
-                PurchaseRequisition,
-                ProcurementPurchaseOrder.purchase_requisition_id
-                == PurchaseRequisition.id,
-            )
-            .filter(
-                PurchaseRequisition.requester_id == self.user_id,
-                PurchaseOrderApproval.decision == "Pending",
-            )
-            .scalar()
-            or 0
-        )
+        # Pending approvals = POs waiting for approval
+        # (approval rows are only created on Approve/Reject)
+        pending_approvals = get_po_status_count("Pending Approval")
 
         # Average PO creation time:
         # Purchase Requisition creation -> PO creation
+        creation_duration = self._duration_seconds(
+            ProcurementPurchaseOrder.created_at,
+            PurchaseRequisition.created_at,
+        )
         average_po_creation_time = (
-            self.db.query(
-                func.avg(
-                    func.extract(
-                        "epoch",
-                        ProcurementPurchaseOrder.created_at
-                        - PurchaseRequisition.created_at,
-                    )
-                )
-            )
+            self.db.query(func.avg(creation_duration))
             .join(
                 PurchaseRequisition,
                 ProcurementPurchaseOrder.purchase_requisition_id
@@ -913,22 +909,19 @@ class DashboardService:
                 PurchaseRequisition.requester_id == self.user_id,
                 ProcurementPurchaseOrder.created_at.isnot(None),
                 PurchaseRequisition.created_at.isnot(None),
+                creation_duration > 0,
             )
             .scalar()
         )
 
         # Average PO approval time:
         # PO creation -> approval decision
+        approval_duration = self._duration_seconds(
+            PurchaseOrderApproval.decided_at,
+            ProcurementPurchaseOrder.created_at,
+        )
         average_po_approval_time = (
-            self.db.query(
-                func.avg(
-                    func.extract(
-                        "epoch",
-                        PurchaseOrderApproval.decided_at
-                        - ProcurementPurchaseOrder.created_at,
-                    )
-                )
-            )
+            self.db.query(func.avg(approval_duration))
             .join(
                 ProcurementPurchaseOrder,
                 PurchaseOrderApproval.purchase_order_id
@@ -944,15 +937,17 @@ class DashboardService:
                 PurchaseOrderApproval.decision == "Approved",
                 PurchaseOrderApproval.decided_at.isnot(None),
                 ProcurementPurchaseOrder.created_at.isnot(None),
+                approval_duration > 0,
             )
             .scalar()
         )
 
-        # PO-to-invoice conversion ratio
-        po_linked_invoices = (
-            self.db.query(func.count(func.distinct(Invoice.id)))
+        # PO-to-invoice conversion ratio:
+        # % of POs that have at least one linked invoice (capped by design at 100%)
+        pos_with_invoices = (
+            self.db.query(func.count(func.distinct(ProcurementPurchaseOrder.id)))
             .join(
-                ProcurementPurchaseOrder,
+                Invoice,
                 Invoice.procurement_purchase_order_id
                 == ProcurementPurchaseOrder.id,
             )
@@ -970,21 +965,18 @@ class DashboardService:
         )
 
         po_to_invoice_conversion_ratio = (
-            (po_linked_invoices / total_pos) * 100
+            (pos_with_invoices / total_pos) * 100
             if total_pos
             else 0
         )
 
         # Average aging of open POs
+        aging_duration = self._duration_seconds(
+            func.now(),
+            ProcurementPurchaseOrder.created_at,
+        )
         average_po_aging = (
-            self.db.query(
-                func.avg(
-                    func.extract(
-                        "epoch",
-                        func.now() - ProcurementPurchaseOrder.created_at,
-                    )
-                )
-            )
+            self.db.query(func.avg(aging_duration))
             .join(
                 PurchaseRequisition,
                 ProcurementPurchaseOrder.purchase_requisition_id
@@ -994,6 +986,7 @@ class DashboardService:
                 PurchaseRequisition.requester_id == self.user_id,
                 ProcurementPurchaseOrder.status.in_(open_statuses),
                 ProcurementPurchaseOrder.created_at.isnot(None),
+                aging_duration > 0,
             )
             .scalar()
         )
@@ -1060,12 +1053,12 @@ class DashboardService:
             "average_po_creation_time": (
                 float(average_po_creation_time)
                 if average_po_creation_time is not None
-                else 0
+                else None
             ),
             "average_po_approval_time": (
                 float(average_po_approval_time)
                 if average_po_approval_time is not None
-                else 0
+                else None
             ),
             "po_to_invoice_conversion_ratio": round(
                 po_to_invoice_conversion_ratio,
@@ -1074,7 +1067,7 @@ class DashboardService:
             "average_po_aging": (
                 float(average_po_aging)
                 if average_po_aging is not None
-                else 0
+                else None
             ),
             "po_value_by_department": po_value_by_department,
             "po_value_by_vendor": po_value_by_vendor,
