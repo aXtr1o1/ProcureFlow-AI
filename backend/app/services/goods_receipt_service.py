@@ -206,6 +206,33 @@ class GoodsReceiptService:
             self.db.add(goods_receipt_line)
 
         # ------------------------------------------------------
+        # FULL receipt covering the PO: Accept + try close.
+        # Enables Flow 2 (Payment → GR create → PO Closed)
+        # without a separate Accept click.
+        # ------------------------------------------------------
+        self.db.flush()
+
+        if (request.receipt_type or "").upper() == "FULL":
+            from app.services.purchase_order_service import (
+                PurchaseOrderService,
+            )
+
+            po_service = PurchaseOrderService(self.db)
+            previous_status = goods_receipt.status
+
+            goods_receipt.status = "Accepted"
+            self.db.flush()
+
+            if po_service.is_po_fully_received(
+                purchase_order.id
+            ):
+                po_service.try_close_purchase_order(
+                    purchase_order.id
+                )
+            else:
+                goods_receipt.status = previous_status
+
+        # ------------------------------------------------------
         # Save
         # ------------------------------------------------------
         self.db.commit()
@@ -412,62 +439,24 @@ class GoodsReceiptService:
         receipt.status = new_status
 
         # ------------------------------------------------------
-        # Close PO only after an Accepted Goods Receipt
+        # Close PO when Matched+Paid + Valid Accepted GR
+        # (order of GR vs payment does not matter)
         # ------------------------------------------------------
 
         if new_status == "Accepted":
+            # SessionLocal uses autoflush=False — flush so this
+            # Accepted GR is visible to the coverage query.
+            self.db.flush()
 
-            purchase_order = (
-                self.db.query(ProcurementPurchaseOrder)
-                .filter(
-                    ProcurementPurchaseOrder.id
-                    == receipt.purchase_order_id
-                )
-                .first()
+            from app.services.purchase_order_service import (
+                PurchaseOrderService,
             )
 
-            if purchase_order is not None:
-
-                po_lines = (
-                    self.db.query(ProcurementPurchaseOrderLine)
-                    .filter(
-                        ProcurementPurchaseOrderLine.purchase_order_id
-                        == purchase_order.id
-                    )
-                    .all()
-                )
-
-                fully_received = True
-
-                for po_line in po_lines:
-
-                    existing_received = (
-                        self.db.query(GoodsReceiptLine)
-                        .join(GoodsReceipt)
-                        .filter(
-                            GoodsReceipt.purchase_order_id
-                            == purchase_order.id,
-                            GoodsReceiptLine.purchase_order_line_id
-                            == po_line.id,
-                            GoodsReceipt.status == "Accepted",
-                        )
-                        .all()
-                    )
-
-                    total_received = sum(
-                        float(line.received_quantity or 0)
-                        for line in existing_received
-                    )
-
-                    if total_received < float(po_line.quantity or 0):
-                        fully_received = False
-                        break
-
-                if (
-                    fully_received
-                    and purchase_order.status == "Acknowledged"
-                ):
-                    purchase_order.status = "Closed"
+            PurchaseOrderService(
+                self.db
+            ).try_close_purchase_order(
+                receipt.purchase_order_id
+            )
 
         # ------------------------------------------------------
         # Update remarks

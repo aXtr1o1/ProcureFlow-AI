@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 
 import {
   PurchaseOrder,
+  GoodsReceipt,
   getPurchaseOrder,
   submitPurchaseOrder,
   approvePurchaseOrder,
@@ -13,6 +15,7 @@ import {
   vendorAcceptPurchaseOrder,
   vendorRejectPurchaseOrder,
   cancelPurchaseOrder,
+  getGoodsReceiptsForPurchaseOrder,
 } from "@/lib/procurement";
 
 import StatusBadge from "@/components/procurement/StatusBadge";
@@ -36,6 +39,9 @@ export default function PurchaseOrderDetailsPage() {
 
   const [po, setPO] =
     useState<PurchaseOrder | null>(null);
+
+  const [goodsReceipts, setGoodsReceipts] =
+    useState<GoodsReceipt[]>([]);
 
   const [loading, setLoading] =
     useState(true);
@@ -68,6 +74,16 @@ export default function PurchaseOrderDetailsPage() {
         await getPurchaseOrder(poNumber);
 
       setPO(data);
+
+      try {
+        const receipts =
+          await getGoodsReceiptsForPurchaseOrder(
+            data.id
+          );
+        setGoodsReceipts(receipts);
+      } catch {
+        setGoodsReceipts([]);
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -137,6 +153,15 @@ export default function PurchaseOrderDetailsPage() {
 
   return (
     <main className="p-6">
+      <div className="mb-4">
+        <Link
+          href="/dashboard/purchase-orders"
+          className="text-sm text-primary hover:underline"
+        >
+          ← Purchase Orders
+        </Link>
+      </div>
+
       {/* =====================================================
           Workflow
       ====================================================== */}
@@ -429,35 +454,60 @@ export default function PurchaseOrderDetailsPage() {
       )}
 
       {/* =====================================================
-          Acknowledged -> Create Goods Receipt
+          Acknowledged -> Create Goods Receipt / existing GR
       ====================================================== */}
 
-      {po.status === "Acknowledged" && (
-        <div className="mt-6 rounded-lg border bg-white p-6">
-          <h2 className="mb-2 text-lg font-semibold">
-            Goods Receipt
-          </h2>
+      {po.status === "Acknowledged" && (() => {
+        const hasAcceptedGR = goodsReceipts.some(
+          (gr) => gr.status === "Accepted"
+        );
 
-          <p className="mb-4 text-sm text-gray-500">
-            The Purchase Order has been acknowledged.
-            You can now create a Goods Receipt for the received items.
-          </p>
+        if (hasAcceptedGR) {
+          return (
+            <div className="mt-6 rounded-lg border bg-white p-6">
+              <h2 className="mb-2 text-lg font-semibold">
+                Goods Receipt
+              </h2>
 
-          <button
-            type="button"
-            onClick={() =>
-              router.push(
-                `/dashboard/goods-receipts/create?purchaseOrderId=${encodeURIComponent(
-                  po.po_number
-                )}`
-              )
-            }
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-          >
-            Create Goods Receipt
-          </button>
-        </div>
-      )}
+              <p className="text-sm text-gray-500">
+                A valid Goods Receipt is on file. The PO
+                closes when linked invoice payment is
+                completed and received quantities cover all
+                PO lines. If payment is already Paid, refresh
+                this page — or Accept the GR if it is still
+                Draft/Submitted.
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="mt-6 rounded-lg border bg-white p-6">
+            <h2 className="mb-2 text-lg font-semibold">
+              Goods Receipt
+            </h2>
+
+            <p className="mb-4 text-sm text-gray-500">
+              The Purchase Order has been acknowledged.
+              You can now create a Goods Receipt for the received items.
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/dashboard/goods-receipts/create?purchaseOrderId=${encodeURIComponent(
+                    po.po_number
+                  )}`
+                )
+              }
+              className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+            >
+              Create Goods Receipt
+            </button>
+          </div>
+        );
+      })()}
 
       {/* =====================================================
           Vendor Rejected

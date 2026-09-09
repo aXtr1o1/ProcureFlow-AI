@@ -401,6 +401,18 @@ class PaymentService:
             if total_paid + payment.amount == invoice_total:
                 invoice.processing_status = "Paid"
 
+                # Close linked PO if Valid GR already exists
+                # (supports GR-before-payment flow)
+                po_id = invoice.procurement_purchase_order_id
+                if po_id:
+                    from app.services.purchase_order_service import (
+                        PurchaseOrderService,
+                    )
+
+                    PurchaseOrderService(
+                        self.db
+                    ).try_close_purchase_order(po_id)
+
             payment.payment_date = (
                 payment_date
                 or payment.payment_date

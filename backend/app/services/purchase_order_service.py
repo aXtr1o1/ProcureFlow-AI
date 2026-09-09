@@ -10,6 +10,9 @@ from app.database.models import (
     ProcurementPurchaseOrderLine,
     PurchaseOrderApproval,
     PurchaseOrderVendorResponse,
+    GoodsReceipt,
+    GoodsReceiptLine,
+    Invoice,
 )
 
 from app.services.audit_service import AuditService
@@ -212,6 +215,122 @@ class PurchaseOrderService:
         )
 
         return purchase_order
+
+    # ==========================================================
+    # Close eligibility: Matched+Paid + Valid GR
+    # Order of GR vs payment does not matter.
+    # ==========================================================
+
+    def is_po_fully_received(
+        self,
+        purchase_order_id: int,
+    ) -> bool:
+        po_lines = (
+            self.db.query(ProcurementPurchaseOrderLine)
+            .filter(
+                ProcurementPurchaseOrderLine.purchase_order_id
+                == purchase_order_id
+            )
+            .all()
+        )
+
+        if not po_lines:
+            return False
+
+        for po_line in po_lines:
+            gr_lines = (
+                self.db.query(GoodsReceiptLine)
+                .join(GoodsReceipt)
+                .filter(
+                    GoodsReceipt.purchase_order_id
+                    == purchase_order_id,
+                    GoodsReceiptLine.purchase_order_line_id
+                    == po_line.id,
+                    GoodsReceipt.status == "Accepted",
+                )
+                .all()
+            )
+
+            total_received = sum(
+                float(
+                    (line.accepted_quantity or 0)
+                    or (line.received_quantity or 0)
+                )
+                for line in gr_lines
+            )
+
+            if total_received < float(po_line.quantity or 0):
+                return False
+
+        return True
+
+    def has_matched_and_paid_invoice(
+        self,
+        purchase_order: ProcurementPurchaseOrder,
+    ) -> bool:
+        """
+        Paid implies match + approval completed in this app.
+        """
+        invoices = (
+            self.db.query(Invoice)
+            .filter(
+                Invoice.procurement_purchase_order_id
+                == purchase_order.id
+            )
+            .all()
+        )
+
+        if not invoices:
+            invoices = (
+                self.db.query(Invoice)
+                .filter(
+                    Invoice.purchase_order_number
+                    == purchase_order.po_number
+                )
+                .all()
+            )
+
+        return any(
+            inv.processing_status == "Paid"
+            for inv in invoices
+        )
+
+    def try_close_purchase_order(
+        self,
+        purchase_order_id: int,
+    ) -> bool:
+        """
+        Close PO when:
+            Matched + Payment Completed + Valid Accepted GR
+        Caller is responsible for commit.
+        """
+        purchase_order = (
+            self.db.query(ProcurementPurchaseOrder)
+            .filter(
+                ProcurementPurchaseOrder.id
+                == purchase_order_id
+            )
+            .first()
+        )
+
+        if purchase_order is None:
+            return False
+
+        if purchase_order.status != "Acknowledged":
+            return False
+
+        if not self.has_matched_and_paid_invoice(
+            purchase_order
+        ):
+            return False
+
+        if not self.is_po_fully_received(
+            purchase_order.id
+        ):
+            return False
+
+        purchase_order.status = "Closed"
+        return True
 
     # ==========================================================
     # Submit PO for Approval
