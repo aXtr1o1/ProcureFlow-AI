@@ -102,6 +102,10 @@ export default function PRDetailsPage() {
     );
   }
 
+  const vendorSelected = Boolean(
+    pr.selected_vendor_name?.trim()
+  );
+
   return (
     <main className="p-6">
       <WorkflowStepper
@@ -264,17 +268,24 @@ export default function PRDetailsPage() {
 
           <div className="flex gap-3">
             <input
-              value={vendor}
+              value={
+                vendorSelected
+                  ? pr.selected_vendor_name ?? ""
+                  : vendor
+              }
+              disabled={actionLoading || vendorSelected}
               onChange={(e) =>
                 setVendor(e.target.value)
               }
               placeholder="Vendor name"
-              className="flex-1 rounded-lg border px-3 py-2"
+              className="flex-1 rounded-lg border px-3 py-2 disabled:cursor-not-allowed disabled:bg-gray-100"
             />
 
             <button
               disabled={
-                actionLoading || !vendor.trim()
+                actionLoading ||
+                !vendor.trim() ||
+                vendorSelected
               }
               onClick={() =>
                 execute(() =>
@@ -284,9 +295,11 @@ export default function PRDetailsPage() {
                   )
                 )
               }
-              className="rounded-lg bg-blue-600 px-4 py-2 text-white"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Select Vendor
+              {vendorSelected
+                ? "Vendor Selected"
+                : "Select Vendor"}
             </button>
           </div>
         </div>

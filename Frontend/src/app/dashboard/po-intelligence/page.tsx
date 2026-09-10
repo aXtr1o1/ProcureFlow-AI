@@ -115,11 +115,6 @@ export default function POIntelligencePage() {
           />
 
           <Card
-            title="Pending Approvals"
-            value={po.pending_approvals}
-          />
-
-          <Card
             title="Average PO Creation Time"
             value={formatDurationOrNA(po.average_po_creation_time)}
           />

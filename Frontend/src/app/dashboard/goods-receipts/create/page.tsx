@@ -198,11 +198,23 @@ export default function CreateGoodsReceiptPage() {
       }
 
       if (
-        accepted + rejected >
-        received
+        received <= 0 ||
+        accepted <= 0 && rejected <= 0
       ) {
         throw new Error(
-          `Line ${index + 1}: accepted + rejected quantity cannot exceed received quantity.`
+          "Please enter the received quantity and specify whether the items were accepted or rejected."
+        );
+      }
+
+      if (accepted > 0 && rejected > 0) {
+        throw new Error(
+          `Line ${index + 1}: enter a quantity in either accepted or rejected, not both.`
+        );
+      }
+
+      if (accepted + rejected !== received) {
+        throw new Error(
+          `Line ${index + 1}: received quantity must equal accepted quantity plus rejected quantity.`
         );
       }
 
@@ -564,10 +576,19 @@ export default function CreateGoodsReceiptPage() {
                       step="0.01"
                       value={line.accepted_quantity}
                       onChange={(event) =>
-                        updateLine(
-                          index,
-                          "accepted_quantity",
-                          event.target.value
+                        setLineItems((current) =>
+                          current.map((currentLine, lineIndex) =>
+                            lineIndex === index
+                              ? {
+                                  ...currentLine,
+                                  accepted_quantity: event.target.value,
+                                  rejected_quantity:
+                                    Number(event.target.value) > 0
+                                      ? "0"
+                                      : currentLine.rejected_quantity,
+                                }
+                              : currentLine
+                          )
                         )
                       }
                       className="h-9 w-24 rounded-md border px-2 text-center"
@@ -583,10 +604,19 @@ export default function CreateGoodsReceiptPage() {
                       step="0.01"
                       value={line.rejected_quantity}
                       onChange={(event) =>
-                        updateLine(
-                          index,
-                          "rejected_quantity",
-                          event.target.value
+                        setLineItems((current) =>
+                          current.map((currentLine, lineIndex) =>
+                            lineIndex === index
+                              ? {
+                                  ...currentLine,
+                                  rejected_quantity: event.target.value,
+                                  accepted_quantity:
+                                    Number(event.target.value) > 0
+                                      ? "0"
+                                      : currentLine.accepted_quantity,
+                                }
+                              : currentLine
+                          )
                         )
                       }
                       className="h-9 w-24 rounded-md border px-2 text-center"

@@ -126,25 +126,6 @@ export default function POTrendsPage() {
               currency={false}
             />
 
-            <TrendCard
-              title="Exceptions"
-              description="Track invoice exceptions over time."
-              value={trends.reduce(
-                (sum, item) => sum + item.exceptions,
-                0
-              )}
-              currency={false}
-            />
-
-            <TrendCard
-              title="Savings"
-              description="Track negotiation and price variance savings."
-              value={trends.reduce(
-                (sum, item) => sum + item.savings,
-                0
-              )}
-            />
-
           </div>
 
         </section>
@@ -205,14 +186,6 @@ export default function POTrendsPage() {
                       Invoices
                     </th>
 
-                    <th className="p-3 text-sm text-on-surface-variant">
-                      Exceptions
-                    </th>
-
-                    <th className="p-3 text-sm text-on-surface-variant">
-                      Savings
-                    </th>
-
                   </tr>
                 </thead>
 
@@ -245,14 +218,6 @@ export default function POTrendsPage() {
 
                       <td className="p-3">
                         {item.number_of_invoices.toLocaleString()}
-                      </td>
-
-                      <td className="p-3">
-                        {item.exceptions.toLocaleString()}
-                      </td>
-
-                      <td className="p-3">
-                        {formatCurrency(item.savings)}
                       </td>
 
                     </tr>

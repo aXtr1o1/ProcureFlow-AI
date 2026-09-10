@@ -87,7 +87,7 @@ export default function ProcurementFunnelPage() {
       name: "Business Needs",
       route: "/dashboard/business-needs",
       data: funnel?.business_needs,
-      showPending: true,
+      showPending: false,
       showSla: true,
     },
     {
