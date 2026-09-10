@@ -814,6 +814,34 @@ class DashboardService:
             self._goods_receipt_funnel_value()
         )
 
+        payments = self._funnel_stage(
+            Payment,
+            value_column=Payment.amount,
+            status_column=Payment.status,
+            pending_statuses=[
+                "Pending",
+            ],
+        )
+
+        pending_payment_invoice_query = (
+            self.db.query(func.count(Invoice.id))
+            .filter(
+                Invoice.processing_status.in_(
+                    [
+                        "Payment Pending",
+                        "Partially Paid",
+                    ]
+                )
+            )
+        )
+        pending_payment_invoice_query = self._apply_user_filter(
+            pending_payment_invoice_query,
+            Invoice,
+        )
+        payments["pending"] = int(
+            pending_payment_invoice_query.scalar() or 0
+        )
+
         return {
             "business_needs":
                 self._funnel_stage(
@@ -883,15 +911,7 @@ class DashboardService:
                     ],
                 ),
 
-            "payments":
-                self._funnel_stage(
-                    Payment,
-                    value_column=Payment.amount,
-                    status_column=Payment.status,
-                    pending_statuses=[
-                        "Pending",
-                    ],
-                ),
+            "payments": payments,
         }
 
     # ==========================================================
@@ -2678,7 +2698,12 @@ class DashboardService:
                 paid_subquery.c.invoice_id == Invoice.id,
             )
             .filter(
-                Invoice.processing_status == "Payment Pending",
+                Invoice.processing_status.in_(
+                    [
+                        "Payment Pending",
+                        "Partially Paid",
+                    ]
+                ),
                 remaining_expr > 0,
             )
         )

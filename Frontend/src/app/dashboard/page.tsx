@@ -520,7 +520,7 @@ export default function DashboardPage() {
       label: "Business Needs",
       stage: dashboard?.funnel?.business_needs,
       href: "/dashboard/business-needs",
-      showPending: true,
+      showPending: false,
       showSla: true,
     },
     {

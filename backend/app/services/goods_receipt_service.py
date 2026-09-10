@@ -148,13 +148,32 @@ class GoodsReceiptService:
                 )
 
             if (
-                item.accepted_quantity
-                + item.rejected_quantity
-                > item.received_quantity
+                item.received_quantity <= 0
+                or item.accepted_quantity <= 0
+                and item.rejected_quantity <= 0
             ):
                 raise ValueError(
-                    "Accepted quantity plus rejected quantity "
-                    "cannot exceed received quantity."
+                    "Please enter the received quantity and specify "
+                    "whether the items were accepted or rejected."
+                )
+
+            if (
+                item.accepted_quantity > 0
+                and item.rejected_quantity > 0
+            ):
+                raise ValueError(
+                    "Enter a quantity in either accepted or rejected, "
+                    "not both."
+                )
+
+            if (
+                item.accepted_quantity
+                + item.rejected_quantity
+                != item.received_quantity
+            ):
+                raise ValueError(
+                    "Received quantity must equal accepted quantity "
+                    "plus rejected quantity."
                 )
 
             # --------------------------------------------------
