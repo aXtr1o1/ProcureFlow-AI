@@ -111,39 +111,23 @@ export default function VendorIntelligencePage() {
           </h2>
 
           <div className="mt-5 overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full table-fixed text-left">
               <thead>
                 <tr className="border-b border-outline-variant/20">
-                  <th className="p-3 text-sm text-on-surface-variant">
+                  <th className="w-1/4 p-3 text-sm text-on-surface-variant">
                     Vendor Name
                   </th>
 
-                  <th className="p-3 text-sm text-on-surface-variant">
+                  <th className="w-1/4 p-3 text-sm text-on-surface-variant">
                     Overall Score
                   </th>
 
-                  <th className="p-3 text-sm text-on-surface-variant">
-                    On-Time Delivery
-                  </th>
-
-                  <th className="p-3 text-sm text-on-surface-variant">
+                  <th className="w-1/4 p-3 text-sm text-on-surface-variant">
                     Invoice Accuracy
                   </th>
 
-                  <th className="p-3 text-sm text-on-surface-variant">
-                    PO Compliance
-                  </th>
-
-                  <th className="p-3 text-sm text-on-surface-variant">
+                  <th className="w-1/4 p-3 text-sm text-on-surface-variant">
                     Price Variance (USD)
-                  </th>
-
-                  <th className="p-3 text-sm text-on-surface-variant">
-                    Exception Rate
-                  </th>
-
-                  <th className="p-3 text-sm text-on-surface-variant">
-                    Payment Dispute
                   </th>
                 </tr>
               </thead>
@@ -152,7 +136,7 @@ export default function VendorIntelligencePage() {
                 {vendors.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={4}
                       className="p-8 text-center text-on-surface-variant"
                     >
                       No vendor data available.
@@ -173,27 +157,11 @@ export default function VendorIntelligencePage() {
                       </td>
 
                       <td className="p-3 text-on-surface">
-                        {formatMetric(vendor.on_time_delivery)}
-                      </td>
-
-                      <td className="p-3 text-on-surface">
                         {formatMetric(vendor.invoice_accuracy)}
                       </td>
 
                       <td className="p-3 text-on-surface">
-                        {formatMetric(vendor.po_compliance)}
-                      </td>
-
-                      <td className="px-4 py-3 text-right text-sm">
                         {formatPriceVariance(vendor.price_variance)}
-                      </td>
-
-                      <td className="p-3 text-on-surface">
-                        {formatMetric(vendor.exception_rate)}
-                      </td>
-
-                      <td className="p-3 text-on-surface">
-                        {formatMetric(vendor.payment_dispute)}
                       </td>
                     </tr>
                   ))

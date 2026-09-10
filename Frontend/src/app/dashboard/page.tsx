@@ -509,60 +509,6 @@ export default function DashboardPage() {
       description:
         "Successfully matched invoices",
     },
-    {
-      label: "Exception Rate",
-      value: dashboardLoading
-        ? "..."
-        : formatPercent(
-            executiveMetrics.exceptionRate
-          ),
-      description:
-        "Invoices requiring intervention",
-    },
-    {
-      label: "Pending Approval",
-      value: dashboardLoading
-        ? "..."
-        : formatUsd(
-            executiveMetrics.pendingApprovalValue,
-            "USD"
-          ),
-      description:
-        "Value waiting for approval",
-    },
-    {
-      label: "Average Processing Time",
-      value: dashboardLoading
-        ? "..."
-        : formatMetric(
-            executiveMetrics.averageProcessingTime,
-            " days"
-          ),
-      description:
-        "End-to-end processing time",
-    },
-    {
-      label: "Potential Savings",
-      value: dashboardLoading
-        ? "..."
-        : formatUsd(
-            executiveMetrics.potentialSavings,
-            "USD"
-          ),
-      description:
-        "Identified negotiation or price savings",
-    },
-    {
-      label: "Overdue Payments",
-      value: dashboardLoading
-        ? "..."
-        : formatUsd(
-            executiveMetrics.overduePayments,
-            "USD"
-          ),
-      description:
-        "Payments beyond agreed terms",
-    },
   ];
 
   /* ========================================================
@@ -1041,7 +987,7 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
               <div className="rounded-xl bg-surface-container-high/50 p-5">
                 <p className="text-sm text-on-surface-variant">
@@ -1090,19 +1036,6 @@ export default function DashboardPage() {
                 <p className="mt-2 text-xl font-bold text-primary">
                   {formatUsd(
                     dashboard?.spend.total_pending_payment ?? 0,
-                    "USD"
-                  )}
-                </p>
-              </div>
-
-              <div className="rounded-xl bg-surface-container-high/50 p-5">
-                <p className="text-sm text-on-surface-variant">
-                  Exception Value
-                </p>
-
-                <p className="mt-2 text-xl font-bold text-primary">
-                  {formatUsd(
-                    dashboard?.spend.total_exception_value ?? 0,
                     "USD"
                   )}
                 </p>

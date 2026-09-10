@@ -136,11 +136,6 @@ export default function BusinessNeedDetailsPage() {
               <strong>Location:</strong>{" "}
               {item.location || "-"}
             </p>
-
-            <p>
-              <strong>Cost Center:</strong>{" "}
-              {item.cost_center || "-"}
-            </p>
           </div>
         </div>
 
