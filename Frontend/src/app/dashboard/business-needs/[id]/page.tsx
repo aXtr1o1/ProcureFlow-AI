@@ -179,12 +179,20 @@ export default function BusinessNeedDetailsPage() {
         )}
 
         {item.status === "Submitted" && (
-          <Link
-            href={`/dashboard/purchase-requisitions/create?businessNeedId=${item.id}&businessNeedNumber=${encodeURIComponent(item.need_number)}`}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white"
-          >
-            Create Purchase Requisition
-          </Link>
+          <div className="flex flex-col gap-2">
+            <Link
+              href={`/dashboard/purchase-requisitions/create?businessNeedId=${item.id}&businessNeedNumber=${encodeURIComponent(item.need_number)}`}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-center text-white"
+            >
+              Create Purchase Requisition
+            </Link>
+            <p className="text-xs text-gray-500">
+              You can create multiple PRs for this Business Need.
+              A new PR is blocked only if it matches an in-progress
+              PR (same title and line items) whose PO is not yet
+              sent to the vendor.
+            </p>
+          </div>
         )}
       </div>
     </main>

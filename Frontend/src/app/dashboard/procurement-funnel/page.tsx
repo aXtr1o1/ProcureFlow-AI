@@ -104,7 +104,7 @@ export default function ProcurementFunnelPage() {
       route: "/dashboard/purchase-orders",
       data: funnel?.purchase_orders,
       showPending: true,
-      showSla: true,
+      showSla: false,
     },
     {
       number: 4,
@@ -161,7 +161,7 @@ export default function ProcurementFunnelPage() {
               type="button"
               key={stage.name}
               onClick={() => router.push(stage.route)}
-              className="w-full text-left rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 transition-all hover:-translate-y-1 hover:shadow-md cursor-pointer"
+              className="w-full flex flex-col items-stretch text-left rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 transition-all hover:-translate-y-1 hover:shadow-md cursor-pointer appearance-none"
             >
 
               <div className="flex items-center justify-between">

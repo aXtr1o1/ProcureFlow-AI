@@ -20,6 +20,12 @@ from app.services.currency_service import (
     convert_invoice_amounts_to_usd,
 )
 
+PRE_SEND_PO_STATUSES = {
+    "Created",
+    "Pending Approval",
+    "Approved",
+}
+
 
 class PurchaseOrderService:
     """
@@ -51,6 +57,95 @@ class PurchaseOrderService:
 
     def __init__(self, db: Session):
         self.db = db
+
+    @staticmethod
+    def _normalize_vendor(vendor_name: str | None) -> str:
+        return (vendor_name or "").strip().lower()
+
+    @staticmethod
+    def _line_item_signature(line_items: list) -> list[tuple]:
+        """
+        Stable signature for duplicate comparison:
+        description + quantity + unit_price.
+        """
+        signature = []
+
+        for item in line_items or []:
+            if isinstance(item, dict):
+                description = item.get("description")
+                quantity = item.get("quantity", 0)
+                unit_price = item.get("unit_price", 0)
+            else:
+                description = getattr(item, "description", None)
+                quantity = getattr(item, "quantity", 0)
+                unit_price = getattr(item, "unit_price", 0)
+
+            signature.append(
+                (
+                    (description or "").strip().lower(),
+                    round(float(quantity or 0), 4),
+                    round(float(unit_price or 0), 4),
+                )
+            )
+
+        return sorted(signature)
+
+    def _find_duplicate_pre_send_po(
+        self,
+        *,
+        business_need_id: int,
+        vendor_name: str | None,
+        total_amount: float,
+        line_items: list,
+    ) -> ProcurementPurchaseOrder | None:
+        """
+        Duplicate when same BN + vendor + amount + line items
+        and existing PO is not yet sent to vendor.
+        If any of those differ, returns None (flow continues).
+        """
+        proposed_vendor = self._normalize_vendor(vendor_name)
+        proposed_lines = self._line_item_signature(line_items)
+        proposed_total = round(float(total_amount or 0), 2)
+
+        candidates = (
+            self.db.query(ProcurementPurchaseOrder)
+            .options(
+                joinedload(ProcurementPurchaseOrder.line_items)
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.business_need_id
+                == business_need_id,
+                func.round(
+                    ProcurementPurchaseOrder.total_amount,
+                    2,
+                )
+                == proposed_total,
+                ProcurementPurchaseOrder.status.in_(
+                    PRE_SEND_PO_STATUSES
+                ),
+            )
+            .all()
+        )
+
+        for candidate in candidates:
+            if self._normalize_vendor(
+                candidate.vendor_name
+            ) != proposed_vendor:
+                continue
+
+            if self._line_item_signature(
+                candidate.line_items
+            ) != proposed_lines:
+                continue
+
+            return candidate
+
+        return None
 
     # ==========================================================
     # Validate Purchase Order Ownership
@@ -597,19 +692,27 @@ class PurchaseOrderService:
                 "creating the Purchase Order."
             )
 
-        existing_po = (
+        # Block another PO on this PR until existing ones are
+        # sent to vendor (or cancelled / rejected).
+        blocking_po = (
             self.db.query(ProcurementPurchaseOrder)
             .filter(
                 ProcurementPurchaseOrder.purchase_requisition_id
-                == purchase_requisition.id
+                == purchase_requisition.id,
+                ProcurementPurchaseOrder.status.in_(
+                    PRE_SEND_PO_STATUSES
+                ),
             )
             .first()
         )
 
-        if existing_po:
+        if blocking_po:
             raise ValueError(
-                "A Purchase Order already exists "
-                "for this Purchase Requisition."
+                "A Purchase Order already exists for this "
+                f"Purchase Requisition ({blocking_po.po_number}) "
+                "and has not been sent to the vendor yet. "
+                "Send it to the vendor (or cancel/reject it) "
+                "before creating another PO."
             )
 
         user_po_count = (
@@ -654,44 +757,30 @@ class PurchaseOrderService:
         )
 
         # ==========================================================
-        # Reject duplicate PO (same value + same date)
+        # Duplicate = same BN + vendor + amount + line items
+        # while PO is still pre-send. Otherwise continue normally.
         # ==========================================================
 
-        proposed_total = round(
-            float(converted_data["total_amount"] or 0),
-            2,
-        )
-        today = datetime.utcnow().date()
-
-        duplicate_po = (
-            self.db.query(ProcurementPurchaseOrder)
-            .filter(
-                func.date(
-                    ProcurementPurchaseOrder.created_at
-                )
-                == today,
-                func.round(
-                    ProcurementPurchaseOrder.total_amount,
-                    2,
-                )
-                == proposed_total,
-                ProcurementPurchaseOrder.status.notin_(
-                    [
-                        "Cancelled",
-                        "Rejected",
-                        "Vendor Rejected",
-                    ]
-                ),
-            )
-            .first()
+        duplicate_po = self._find_duplicate_pre_send_po(
+            business_need_id=(
+                purchase_requisition.business_need_id
+            ),
+            vendor_name=(
+                purchase_requisition.selected_vendor_name
+            ),
+            total_amount=float(
+                converted_data["total_amount"] or 0
+            ),
+            line_items=converted_data.get("line_items") or [],
         )
 
         if duplicate_po:
             raise ValueError(
                 "Duplicate Purchase Order detected. "
                 f"PO {duplicate_po.po_number} already exists "
-                f"with the same value ({proposed_total}) "
-                f"and date ({today})."
+                "for this Business Need with the same vendor, "
+                "value, and line items, and has not been sent "
+                "to the vendor yet."
             )
 
         # ==========================================================

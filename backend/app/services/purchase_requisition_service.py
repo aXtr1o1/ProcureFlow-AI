@@ -8,8 +8,23 @@ from app.database.models import (
     PurchaseRequisition,
     PurchaseRequisitionApproval,
     PurchaseRequisitionLine,
+    ProcurementPurchaseOrder,
 )
 from app.services.audit_service import AuditService
+
+# PO not yet sent to vendor — blocks another PR/PO for the same BN/PR
+PRE_SEND_PO_STATUSES = {
+    "Created",
+    "Pending Approval",
+    "Approved",
+}
+
+ACTIVE_PR_STATUSES = {
+    "Draft",
+    "Submitted",
+    "Approved",
+}
+
 
 class PurchaseRequisitionService:
     def __init__(self, db: Session):
@@ -28,6 +43,132 @@ class PurchaseRequisitionService:
 
         return query
 
+    @staticmethod
+    def _normalize_text(value: str | None) -> str:
+        text = (value or "").strip().lower()
+        for ch in ("\u2013", "\u2014", "\u2212"):
+            text = text.replace(ch, "-")
+        return " ".join(text.split())
+
+    @staticmethod
+    def _line_item_signature(line_items) -> list[tuple]:
+        signature = []
+
+        for item in line_items or []:
+            if isinstance(item, dict):
+                description = item.get("description")
+                quantity = item.get("quantity", 0)
+                unit_price = item.get("unit_price", 0)
+            else:
+                description = getattr(item, "description", None)
+                quantity = getattr(item, "quantity", 0)
+                unit_price = getattr(item, "unit_price", 0)
+
+            signature.append(
+                (
+                    PurchaseRequisitionService._normalize_text(
+                        description
+                    ),
+                    round(float(quantity or 0), 4),
+                    round(float(unit_price or 0), 4),
+                )
+            )
+
+        return sorted(signature)
+
+    def _find_duplicate_in_progress_pr(
+        self,
+        business_need_id: int,
+        line_items,
+        title: str | None = None,
+    ) -> PurchaseRequisition | None:
+        """
+        Block if an in-progress PR on this BN has the same line items
+        (same details). Title is normalized but line items are enough
+        to treat as duplicate. Different line items → allow.
+        """
+        proposed_lines = self._line_item_signature(line_items)
+        proposed_title = self._normalize_text(title)
+        proposed_total = round(
+            sum(
+                float(
+                    (
+                        item.get("quantity", 0)
+                        if isinstance(item, dict)
+                        else getattr(item, "quantity", 0)
+                    )
+                    or 0
+                )
+                * float(
+                    (
+                        item.get("unit_price", 0)
+                        if isinstance(item, dict)
+                        else getattr(item, "unit_price", 0)
+                    )
+                    or 0
+                )
+                for item in (line_items or [])
+            ),
+            2,
+        )
+
+        if not proposed_lines:
+            return None
+
+        existing_prs = (
+            self.db.query(PurchaseRequisition)
+            .options(joinedload(PurchaseRequisition.line_items))
+            .filter(
+                PurchaseRequisition.business_need_id
+                == business_need_id,
+                PurchaseRequisition.status.in_(
+                    ACTIVE_PR_STATUSES
+                ),
+            )
+            .all()
+        )
+
+        for pr in existing_prs:
+            purchase_orders = (
+                self.db.query(ProcurementPurchaseOrder)
+                .filter(
+                    ProcurementPurchaseOrder.purchase_requisition_id
+                    == pr.id
+                )
+                .all()
+            )
+
+            in_progress = (
+                not purchase_orders
+                or any(
+                    po.status in PRE_SEND_PO_STATUSES
+                    for po in purchase_orders
+                )
+            )
+
+            if not in_progress:
+                continue
+
+            existing_lines = self._line_item_signature(
+                pr.line_items
+            )
+            same_lines = existing_lines == proposed_lines
+            same_title = (
+                self._normalize_text(pr.title)
+                == proposed_title
+            )
+            same_total = round(
+                float(pr.total_amount or 0),
+                2,
+            ) == proposed_total
+
+            # Same line items = same details (primary).
+            # Also block same title + same total as a fallback.
+            if same_lines or (same_title and same_total):
+                return pr
+
+        return None
+
     def create(self, data, requester_id: int) -> PurchaseRequisition:
         business_need = self.db.query(BusinessNeed).filter(BusinessNeed.id == data.business_need_id).first()
         if business_need is None:
@@ -35,21 +176,20 @@ class PurchaseRequisitionService:
         if business_need.status in {"Rejected", "Cancelled", "Closed"}:
             raise HTTPException(status_code=409, detail="A PR cannot be created for this Business Need.")
 
-        existing_pr = (
-            self.db.query(PurchaseRequisition)
-            .filter(
-                PurchaseRequisition.business_need_id == business_need.id
-            )
-            .first()
+        blocking_pr = self._find_duplicate_in_progress_pr(
+            business_need.id,
+            data.line_items,
+            title=data.title,
         )
 
-        if existing_pr is not None:
+        if blocking_pr is not None:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"A Purchase Requisition already exists for this "
-                    f"Business Need ({existing_pr.pr_number}). "
-                    f"Only one PR is allowed per Business Need."
+                    f"Duplicate Purchase Requisition detected. "
+                    f"{blocking_pr.pr_number} already exists for this "
+                    f"Business Need with the same details and is still "
+                    f"in progress (PO not sent to vendor)."
                 ),
             )
 
