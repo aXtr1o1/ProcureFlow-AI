@@ -2557,22 +2557,37 @@ class DashboardService:
 
     def _get_pending_payment_value(self) -> float:
         """
-        Pending payment = sum of invoice amounts awaiting payment
-        (processing_status == "Payment Pending").
-
-        Rejected / Paid / other statuses are excluded.
+        Pending payment = sum of remaining balances on
+        Payment Pending invoices (invoice total - Paid payments).
         """
+        paid_subquery = (
+            self.db.query(
+                Payment.invoice_id.label("invoice_id"),
+                func.coalesce(func.sum(Payment.amount), 0).label(
+                    "paid_amount"
+                ),
+            )
+            .filter(Payment.status == "Paid")
+            .group_by(Payment.invoice_id)
+            .subquery()
+        )
+
+        remaining_expr = func.coalesce(Invoice.total_amount, 0) - func.coalesce(
+            paid_subquery.c.paid_amount,
+            0,
+        )
 
         pending_query = (
             self.db.query(
-                func.coalesce(
-                    func.sum(Invoice.total_amount),
-                    0,
-                )
+                func.coalesce(func.sum(remaining_expr), 0)
+            )
+            .outerjoin(
+                paid_subquery,
+                paid_subquery.c.invoice_id == Invoice.id,
             )
             .filter(
-                Invoice.processing_status
-                == "Payment Pending"
+                Invoice.processing_status == "Payment Pending",
+                remaining_expr > 0,
             )
         )
 

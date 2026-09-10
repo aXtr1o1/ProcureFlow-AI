@@ -372,25 +372,6 @@ export default function EditBusinessNeedPage() {
               />
             </div>
 
-            {/* Cost Center */}
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Cost Center
-              </label>
-
-              <input
-                type="text"
-                value={form.cost_center}
-                onChange={(event) =>
-                  handleChange(
-                    "cost_center",
-                    event.target.value
-                  )
-                }
-                className="w-full rounded-lg border px-3 py-2"
-              />
-            </div>
-
             {/* Required By Date */}
             <div>
               <label className="mb-2 block text-sm font-medium">

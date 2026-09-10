@@ -130,7 +130,7 @@ export default function SpendAnalyticsPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card
             title="Total PO Value"
             value={formatCurrency(spend?.total_po_value ?? 0)}
@@ -146,10 +146,6 @@ export default function SpendAnalyticsPage() {
           <Card
             title="Pending Payment"
             value={formatCurrency(spend?.total_pending_payment ?? 0)}
-          />
-          <Card
-            title="Exception Value"
-            value={formatCurrency(spend?.total_exception_value ?? 0)}
           />
         </div>
 
@@ -202,11 +198,6 @@ export default function SpendAnalyticsPage() {
               title="Project"
               data={analytics?.by_project ?? {}}
               color={COLORS.rose}
-            />
-            <RankedBarsChart
-              title="Cost Center"
-              data={analytics?.by_cost_center ?? {}}
-              color={COLORS.rust}
             />
           </div>
         </section>

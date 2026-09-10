@@ -177,7 +177,6 @@ export default function CreateBusinessNeedPage() {
             ["business_unit", "Business Unit"],
             ["project", "Project"],
             ["location", "Location"],
-            ["cost_center", "Cost Center"],
             [
               "required_by_date",
               "Required By Date",
