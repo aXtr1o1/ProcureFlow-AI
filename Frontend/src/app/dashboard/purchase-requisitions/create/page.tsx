@@ -45,8 +45,8 @@ export default function CreatePRPage() {
   const [lines, setLines] = useState<Line[]>([
     {
       description: "",
-      quantity: "1",
-      unit_price: "0",
+      quantity: "",
+      unit_price: "",
     },
   ]);
 
@@ -78,8 +78,8 @@ export default function CreatePRPage() {
       ...current,
       {
         description: "",
-        quantity: "1",
-        unit_price: "0",
+        quantity: "",
+        unit_price: "",
       },
     ]);
   }
@@ -234,59 +234,89 @@ export default function CreatePRPage() {
             </button>
           </div>
 
+          <div className="mb-2 hidden gap-3 md:grid md:grid-cols-4">
+            <span className="text-sm font-medium text-gray-600">
+              Description
+            </span>
+            <span className="text-sm font-medium text-gray-600">
+              Quantity
+            </span>
+            <span className="text-sm font-medium text-gray-600">
+              Unit Price
+            </span>
+            <span className="text-sm font-medium text-gray-600">
+              Action
+            </span>
+          </div>
+
           <div className="space-y-3">
             {lines.map((line, index) => (
               <div
                 key={index}
                 className="grid gap-3 md:grid-cols-4"
               >
-                <input
-                  required
-                  placeholder="Description"
-                  value={line.description}
-                  onChange={(e) =>
-                    updateLine(
-                      index,
-                      "description",
-                      e.target.value
-                    )
-                  }
-                  className="rounded-lg border px-3 py-2"
-                />
+                <div>
+                  <label className="mb-1 block text-sm font-medium md:hidden">
+                    Description
+                  </label>
+                  <input
+                    required
+                    placeholder="Description"
+                    value={line.description}
+                    onChange={(e) =>
+                      updateLine(
+                        index,
+                        "description",
+                        e.target.value
+                      )
+                    }
+                    className="w-full rounded-lg border px-3 py-2"
+                  />
+                </div>
 
-                <input
-                  required
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Quantity"
-                  value={line.quantity}
-                  onChange={(e) =>
-                    updateLine(
-                      index,
-                      "quantity",
-                      e.target.value
-                    )
-                  }
-                  className="rounded-lg border px-3 py-2"
-                />
+                <div>
+                  <label className="mb-1 block text-sm font-medium md:hidden">
+                    Quantity
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Quantity"
+                    value={line.quantity}
+                    onChange={(e) =>
+                      updateLine(
+                        index,
+                        "quantity",
+                        e.target.value
+                      )
+                    }
+                    className="w-full rounded-lg border px-3 py-2"
+                  />
+                </div>
 
-                <input
-                  required
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Unit Price"
-                  value={line.unit_price}
-                  onChange={(e) =>
-                    updateLine(
-                      index,
-                      "unit_price",
-                      e.target.value
-                    )
-                  }
-                  className="rounded-lg border px-3 py-2"
-                />
+                <div>
+                  <label className="mb-1 block text-sm font-medium md:hidden">
+                    Unit Price
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Unit Price"
+                    value={line.unit_price}
+                    onChange={(e) =>
+                      updateLine(
+                        index,
+                        "unit_price",
+                        e.target.value
+                      )
+                    }
+                    className="w-full rounded-lg border px-3 py-2"
+                  />
+                </div>
 
                 <button
                   type="button"

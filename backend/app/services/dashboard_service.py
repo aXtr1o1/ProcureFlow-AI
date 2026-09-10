@@ -663,6 +663,8 @@ class DashboardService:
         value_column=None,
         status_column=None,
         pending_statuses=None,
+        created_column=None,
+        sla_breaches: int = 0,
     ) -> dict:
 
         count = self._count(model)
@@ -702,13 +704,97 @@ class DashboardService:
                 or 0
             )
 
+        average_time = None
+        created_col = created_column or getattr(
+            model,
+            "created_at",
+            None,
+        )
+
+        if created_col is not None:
+            age_days = (
+                self._duration_seconds(
+                    func.now(),
+                    created_col,
+                )
+                / 86400.0
+            )
+
+            avg_query = (
+                self.db.query(func.avg(age_days))
+                .filter(created_col.isnot(None))
+            )
+
+            avg_query = self._apply_user_filter(
+                avg_query,
+                model,
+            )
+
+            avg_days = avg_query.scalar()
+
+            if avg_days is not None:
+                average_time = round(float(avg_days), 2)
+
         return {
             "count": int(count),
             "value": float(value),
-            "average_time": None,
+            "average_time": average_time,
             "pending": int(pending),
-            "sla_breaches": 0,
+            "sla_breaches": int(sla_breaches),
         }
+
+    def _goods_receipt_funnel_value(self) -> float:
+        """
+        GR has no amount column — sum linked PO totals
+        (once per PO) for the current user.
+        """
+
+        rows = (
+            self.db.query(
+                ProcurementPurchaseOrder.id,
+                func.max(
+                    ProcurementPurchaseOrder.total_amount
+                ),
+            )
+            .join(
+                GoodsReceipt,
+                GoodsReceipt.purchase_order_id
+                == ProcurementPurchaseOrder.id,
+            )
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.requester_id
+                == self.user_id
+            )
+            .group_by(ProcurementPurchaseOrder.id)
+            .all()
+        )
+
+        return float(
+            sum(float(amount or 0) for _, amount in rows)
+        )
+
+    def _business_need_sla_breaches(self) -> int:
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+
+        query = (
+            self.db.query(func.count(BusinessNeed.id))
+            .filter(
+                BusinessNeed.requester_id == self.user_id,
+                BusinessNeed.status.in_(
+                    ["Draft", "Submitted"]
+                ),
+                BusinessNeed.required_by_date.isnot(None),
+                BusinessNeed.required_by_date != "",
+                BusinessNeed.required_by_date < today,
+            )
+        )
+
+        return int(query.scalar() or 0)
 
     # ==========================================================
     # Procurement Funnel
@@ -716,34 +802,47 @@ class DashboardService:
 
     def get_funnel(self) -> dict:
 
+        goods_receipts = self._funnel_stage(
+            GoodsReceipt,
+            status_column=GoodsReceipt.status,
+            pending_statuses=[
+                "Draft",
+                "Submitted",
+            ],
+        )
+        goods_receipts["value"] = (
+            self._goods_receipt_funnel_value()
+        )
+
         return {
             "business_needs":
                 self._funnel_stage(
                     BusinessNeed,
-                    status_column=getattr(
-                        BusinessNeed,
-                        "status",
-                        None,
+                    value_column=(
+                        BusinessNeed.estimated_value
                     ),
+                    status_column=BusinessNeed.status,
                     pending_statuses=[
                         "Draft",
-                        "Pending",
-                        "Pending Approval",
+                        "Submitted",
                     ],
+                    sla_breaches=(
+                        self._business_need_sla_breaches()
+                    ),
                 ),
 
             "purchase_requisitions":
                 self._funnel_stage(
                     PurchaseRequisition,
-                    status_column=getattr(
-                        PurchaseRequisition,
-                        "status",
-                        None,
+                    value_column=(
+                        PurchaseRequisition.total_amount
+                    ),
+                    status_column=(
+                        PurchaseRequisition.status
                     ),
                     pending_statuses=[
                         "Draft",
-                        "Pending",
-                        "Pending Approval",
+                        "Submitted",
                     ],
                 ),
 
@@ -757,23 +856,15 @@ class DashboardService:
                         ProcurementPurchaseOrder.status
                     ),
                     pending_statuses=[
+                        "Created",
                         "Pending Approval",
+                        "Approved",
+                        "Sent",
+                        "Acknowledged",
                     ],
                 ),
 
-            "goods_receipts":
-                self._funnel_stage(
-                    GoodsReceipt,
-                    status_column=getattr(
-                        GoodsReceipt,
-                        "status",
-                        None,
-                    ),
-                    pending_statuses=[
-                        "Pending",
-                        "Partial",
-                    ],
-                ),
+            "goods_receipts": goods_receipts,
 
             "invoices":
                 self._funnel_stage(
@@ -785,9 +876,10 @@ class DashboardService:
                     pending_statuses=[
                         "Uploaded",
                         "Processing",
-                        "Pending",
+                        "Review Required",
+                        "Matched",
                         "Approval Pending",
-                        "Validation Pending",
+                        "Payment Pending",
                     ],
                 ),
 
@@ -2557,37 +2649,22 @@ class DashboardService:
 
     def _get_pending_payment_value(self) -> float:
         """
-        Pending payment = sum of remaining balances on
-        Payment Pending invoices (invoice total - Paid payments).
-        """
-        paid_subquery = (
-            self.db.query(
-                Payment.invoice_id.label("invoice_id"),
-                func.coalesce(func.sum(Payment.amount), 0).label(
-                    "paid_amount"
-                ),
-            )
-            .filter(Payment.status == "Paid")
-            .group_by(Payment.invoice_id)
-            .subquery()
-        )
+        Pending payment = sum of invoice amounts awaiting payment
+        (processing_status == "Payment Pending").
 
-        remaining_expr = func.coalesce(Invoice.total_amount, 0) - func.coalesce(
-            paid_subquery.c.paid_amount,
-            0,
-        )
+        Rejected / Paid / other statuses are excluded.
+        """
 
         pending_query = (
             self.db.query(
-                func.coalesce(func.sum(remaining_expr), 0)
-            )
-            .outerjoin(
-                paid_subquery,
-                paid_subquery.c.invoice_id == Invoice.id,
+                func.coalesce(
+                    func.sum(Invoice.total_amount),
+                    0,
+                )
             )
             .filter(
-                Invoice.processing_status == "Payment Pending",
-                remaining_expr > 0,
+                Invoice.processing_status
+                == "Payment Pending"
             )
         )
 

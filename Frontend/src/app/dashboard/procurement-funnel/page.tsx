@@ -87,36 +87,48 @@ export default function ProcurementFunnelPage() {
       name: "Business Needs",
       route: "/dashboard/business-needs",
       data: funnel?.business_needs,
+      showPending: true,
+      showSla: true,
     },
     {
       number: 2,
       name: "Purchase Requisitions",
       route: "/dashboard/purchase-requisitions",
       data: funnel?.purchase_requisitions,
+      showPending: false,
+      showSla: false,
     },
     {
       number: 3,
       name: "Purchase Orders",
       route: "/dashboard/purchase-orders",
       data: funnel?.purchase_orders,
+      showPending: true,
+      showSla: true,
     },
     {
       number: 4,
       name: "Goods Receipts",
       route: "/dashboard/goods-receipts",
       data: funnel?.goods_receipts,
+      showPending: false,
+      showSla: false,
     },
     {
       number: 5,
       name: "Invoices",
       route: "/dashboard/invoices",
       data: funnel?.invoices,
+      showPending: true,
+      showSla: false,
     },
     {
       number: 6,
       name: "Payments",
       route: "/dashboard/payment-center",
       data: funnel?.payments,
+      showPending: true,
+      showSla: false,
     },
   ];
 
@@ -188,18 +200,26 @@ export default function ProcurementFunnelPage() {
 
                 <Row
                   label="Average Time"
-                  value={`${stage.data?.average_time ?? 0}`}
+                  value={
+                    stage.data?.average_time != null
+                      ? `${stage.data.average_time} days`
+                      : "N/A"
+                  }
                 />
 
-                <Row
-                  label="Pending"
-                  value={String(stage.data?.pending ?? 0)}
-                />
+                {stage.showPending && (
+                  <Row
+                    label="Pending"
+                    value={String(stage.data?.pending ?? 0)}
+                  />
+                )}
 
-                <Row
-                  label="SLA Breaches"
-                  value={String(stage.data?.sla_breaches ?? 0)}
-                />
+                {stage.showSla && (
+                  <Row
+                    label="SLA Breaches"
+                    value={String(stage.data?.sla_breaches ?? 0)}
+                  />
+                )}
 
               </div>
 
