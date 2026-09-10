@@ -37,8 +37,18 @@ export default function CreatePurchaseOrderPage() {
       getPurchaseOrders(),
     ])
       .then(([items, purchaseOrders]) => {
-        const prIdsWithPO = new Set(
-          purchaseOrders.map((po) => po.purchase_requisition_id)
+        const preSendStatuses = new Set([
+          "Created",
+          "Pending Approval",
+          "Approved",
+        ]);
+
+        const prIdsWithPreSendPO = new Set(
+          purchaseOrders
+            .filter((po) =>
+              preSendStatuses.has(po.status)
+            )
+            .map((po) => po.purchase_requisition_id)
         );
 
         const available = items.filter(
@@ -46,7 +56,7 @@ export default function CreatePurchaseOrderPage() {
             pr.status?.toLowerCase() === "approved" &&
             Boolean(pr.selected_vendor_name) &&
             pr.negotiated_amount != null &&
-            !prIdsWithPO.has(pr.id)
+            !prIdsWithPreSendPO.has(pr.id)
         );
 
         setApprovedPRs(available);
@@ -220,8 +230,10 @@ export default function CreatePurchaseOrderPage() {
             )}
 
             <p className="mt-2 text-xs text-gray-500">
-              Only your approved PRs without an existing Purchase
-              Order are listed (one PO per PR).
+              Approved PRs are listed when they have no PO still
+              waiting to be sent to the vendor. After a PO is
+              Sent, you can create another PO for the same PR
+              (or another PR under the same Business Need).
             </p>
           </div>
 

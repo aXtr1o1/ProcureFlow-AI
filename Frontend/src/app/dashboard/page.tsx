@@ -537,7 +537,7 @@ export default function DashboardPage() {
         dashboard?.funnel?.purchase_orders,
       href: "/dashboard/purchase-orders",
       showPending: true,
-      showSla: true,
+      showSla: false,
     },
     {
       label: "Goods Receipts",
@@ -853,7 +853,7 @@ export default function DashboardPage() {
                         }
                       }}
                       disabled={stage.href === "#"}
-                      className="relative rounded-xl bg-surface-container-high/50 p-4 text-left transition-all hover:bg-surface-container-high disabled:cursor-default"
+                      className="relative flex h-full min-h-[220px] flex-col items-stretch justify-start rounded-xl bg-surface-container-high/50 p-4 text-left transition-all hover:bg-surface-container-high disabled:cursor-default appearance-none"
                     >
                       <div className="mb-3 flex items-center justify-between">
                         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
