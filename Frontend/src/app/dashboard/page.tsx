@@ -520,36 +520,48 @@ export default function DashboardPage() {
       label: "Business Needs",
       stage: dashboard?.funnel?.business_needs,
       href: "/dashboard/business-needs",
+      showPending: true,
+      showSla: true,
     },
     {
       label: "Purchase Requisitions",
       stage:
         dashboard?.funnel?.purchase_requisitions,
       href: "/dashboard/purchase-requisitions",
+      showPending: false,
+      showSla: false,
     },
     {
       label: "Purchase Orders",
       stage:
         dashboard?.funnel?.purchase_orders,
       href: "/dashboard/purchase-orders",
+      showPending: true,
+      showSla: true,
     },
     {
       label: "Goods Receipts",
       stage:
         dashboard?.funnel?.goods_receipts,
       href: "/dashboard/goods-receipts",
+      showPending: false,
+      showSla: false,
     },
     {
       label: "Invoices",
       stage:
         dashboard?.funnel?.invoices,
       href: "/dashboard/invoices",
+      showPending: true,
+      showSla: false,
     },
     {
       label: "Payments",
       stage:
         dashboard?.funnel?.payments,
       href: "/dashboard/payment-center",
+      showPending: true,
+      showSla: false,
     },
   ];
 
@@ -888,21 +900,25 @@ export default function DashboardPage() {
                           </span>
                         </div>
 
-                        <div className="flex justify-between">
-                          <span>Pending</span>
+                        {stage.showPending && (
+                          <div className="flex justify-between">
+                            <span>Pending</span>
 
-                          <span className="font-semibold text-on-surface">
-                            {metrics?.pending ?? 0}
-                          </span>
-                        </div>
+                            <span className="font-semibold text-on-surface">
+                              {metrics?.pending ?? 0}
+                            </span>
+                          </div>
+                        )}
 
-                        <div className="flex justify-between">
-                          <span>SLA Breaches</span>
+                        {stage.showSla && (
+                          <div className="flex justify-between">
+                            <span>SLA Breaches</span>
 
-                          <span className="font-semibold text-on-surface">
-                            {metrics?.sla_breaches ?? 0}
-                          </span>
-                        </div>
+                            <span className="font-semibold text-on-surface">
+                              {metrics?.sla_breaches ?? 0}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </button>
                   );
