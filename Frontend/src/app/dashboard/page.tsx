@@ -242,6 +242,34 @@ function formatMetric(
   return `${value}${suffix}`;
 }
 
+function formatAverageTime(days: number): string {
+  const totalSeconds = Math.round(days * 24 * 60 * 60);
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor(
+    (totalSeconds % 3600) / 60
+  );
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    if (minutes > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+
+    return `${hours}h`;
+  }
+
+  if (minutes > 0) {
+    if (seconds > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+
+    return `${minutes}m`;
+  }
+
+  return `${seconds}s`;
+}
+
 /* ==========================================================
    Dashboard Page
 ========================================================== */
@@ -552,7 +580,7 @@ export default function DashboardPage() {
       stage:
         dashboard?.funnel?.invoices,
       href: "/dashboard/invoices",
-      showPending: true,
+      showPending: false,
       showSla: false,
     },
     {
@@ -895,7 +923,7 @@ export default function DashboardPage() {
                           <span className="font-semibold text-on-surface">
                             {metrics?.average_time !== null &&
                             metrics?.average_time !== undefined
-                              ? `${metrics.average_time} days`
+                              ? formatAverageTime(metrics.average_time)
                               : "—"}
                           </span>
                         </div>

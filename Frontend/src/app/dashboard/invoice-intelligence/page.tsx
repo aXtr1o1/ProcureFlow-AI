@@ -152,18 +152,8 @@ export default function InvoiceIntelligencePage() {
           />
 
           <MetricCard
-            title="Extraction Failed"
-            value={extractionFailed}
-          />
-
-          <MetricCard
             title="Pending Invoices"
             value={pendingInvoices}
-          />
-
-          <MetricCard
-            title="Open Exceptions"
-            value={exceptionCount}
           />
 
           <MetricCard

@@ -119,7 +119,7 @@ export default function ProcurementFunnelPage() {
       name: "Invoices",
       route: "/dashboard/invoices",
       data: funnel?.invoices,
-      showPending: true,
+      showPending: false,
       showSla: false,
     },
     {
@@ -202,7 +202,7 @@ export default function ProcurementFunnelPage() {
                   label="Average Time"
                   value={
                     stage.data?.average_time != null
-                      ? `${stage.data.average_time} days`
+                      ? formatAverageTime(stage.data.average_time)
                       : "N/A"
                   }
                 />
@@ -279,4 +279,21 @@ function formatCurrency(value: number) {
     currency: "USD",
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatAverageTime(days: number) {
+  const totalMinutes = Math.round(days * 24 * 60);
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours === 0) {
+    return `${minutes}m`;
+  }
+
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${minutes}m`;
 }
