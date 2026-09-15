@@ -70,15 +70,15 @@ type ChipFilter = "all" | "pending_approval" | "last_30" | "high_value";
 
 const CHIPS: { key: ChipFilter; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "pending_approval", label: "Pending Approval" },
+  { key: "pending_approval", label: "Payment Pending" },
   { key: "last_30", label: "Last 30 Days" },
   { key: "high_value", label: "High Value" },
 ];
 
 const DEFAULT_RECENT = [
   "Redefine",
-  "Approval Pending",
-  "RP-LSE",
+  "Payment Pending",
+  "RP-INV",
 ];
 
 function money(amount?: number | string | null, currency?: string) {
@@ -114,9 +114,9 @@ export default function InvoiceSearchPage() {
   }, [loadInvoices]);
 
   const filteredResults = useMemo(() => {
-    return results.filter((inv) => {
+    const filtered = results.filter((inv) => {
       if (activeChip === "pending_approval") {
-        return inv.processing_status === "Validation Completed";
+        return inv.processing_status === "Payment Pending";
       }
       if (activeChip === "high_value") {
         return Number(inv.total_amount ?? 0) >= 2000;
@@ -131,6 +131,15 @@ export default function InvoiceSearchPage() {
       }
       return true;
     });
+
+    if (activeChip === "high_value") {
+      return [...filtered].sort(
+        (a, b) =>
+          Number(b.total_amount ?? 0) - Number(a.total_amount ?? 0),
+      );
+    }
+
+    return filtered;
   }, [results, activeChip]);
 
   const searchInvoices = async (term: string) => {

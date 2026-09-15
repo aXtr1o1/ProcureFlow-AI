@@ -38,11 +38,13 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 
 os.environ.setdefault("FX_TO_USD_USD", "1")
-os.environ.setdefault("FX_TO_USD_ZAR", "18")
-os.environ.setdefault("FX_TO_USD_AED", "3.67")
-os.environ.setdefault("FX_TO_USD_EUR", "0.92")
-os.environ.setdefault("FX_TO_USD_GBP", "0.79")
-os.environ.setdefault("FX_TO_USD_SAR", "3.75")
+os.environ.setdefault("FX_CACHE_TTL_SECONDS", "86400")
+os.environ.setdefault(
+    "FX_RATES_URL",
+    "https://cdn.jsdelivr.net/npm/@fawazahmed0/"
+    "currency-api@latest/v1/currencies/usd.min.json",
+)
+# Do not set FX_TO_USD_* overrides — tests use mocked USD-base table.
 
 
 # Mock Azure Blob Storage
@@ -69,3 +71,41 @@ search_patch = patch(
 blob_patch.start()
 document_patch.start()
 search_patch.start()
+
+# Offline FX table for tests (USD-base: 1 USD = N foreign)
+_TEST_USD_BASE = {
+    "usd": 1.0,
+    "eur": 0.92,
+    "gbp": 0.79,
+    "zar": 18.5,
+    "aed": 3.67,
+    "sar": 3.75,
+    "inr": 83.0,
+    "jpy": 150.0,
+    "cad": 1.36,
+    "aud": 1.52,
+    "cny": 7.2,
+    "chf": 0.88,
+    "sgd": 1.34,
+    "hkd": 7.8,
+    "nzd": 1.66,
+    "sek": 10.5,
+    "nok": 10.6,
+    "dkk": 6.9,
+    "mxn": 17.0,
+    "brl": 5.0,
+    "krw": 1350.0,
+    "try": 32.0,
+    "pln": 4.0,
+    "thb": 35.0,
+    "myr": 4.7,
+    "idr": 15800.0,
+    "php": 56.0,
+    "vnd": 25000.0,
+}
+
+fx_patch = patch(
+    "app.services.currency_service._usd_base_table",
+    return_value=_TEST_USD_BASE,
+)
+fx_patch.start()

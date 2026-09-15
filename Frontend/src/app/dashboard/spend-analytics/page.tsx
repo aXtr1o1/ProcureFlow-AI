@@ -130,25 +130,6 @@ export default function SpendAnalyticsPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card
-            title="Total PO Value"
-            value={formatCurrency(spend?.total_po_value ?? 0)}
-          />
-          <Card
-            title="Total Invoice Value"
-            value={formatCurrency(spend?.total_invoice_value ?? 0)}
-          />
-          <Card
-            title="Paid Amount"
-            value={formatCurrency(spend?.total_paid_amount ?? 0)}
-          />
-          <Card
-            title="Pending Payment"
-            value={formatCurrency(spend?.total_pending_payment ?? 0)}
-          />
-        </div>
-
         <section className="mt-8 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6">
           <div className="mb-5">
             <h2 className="text-xl font-semibold text-on-surface">

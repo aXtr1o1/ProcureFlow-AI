@@ -594,21 +594,27 @@ export async function getApprovalHistory(id: number | string) {
 }
 
 export async function searchInvoice(query: string) {
-
     const token = localStorage.getItem("access_token");
 
-    const response = await fetch(
-        `${API_URL}/search/?query=${encodeURIComponent(query)}`,
-        {
-            method: "GET",
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-            cache: "no-store",
-        }
-    );
+    let response: Response;
+    try {
+        response = await fetch(
+            `${API_URL}/search/?query=${encodeURIComponent(query)}`,
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                cache: "no-store",
+            }
+        );
+    } catch {
+        throw new Error(
+            "Unable to reach the search API. Check that the backend is running."
+        );
+    }
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
         throw new Error(data.detail || "Search failed");

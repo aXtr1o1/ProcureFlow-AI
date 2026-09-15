@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
+import CurrencySelect from "@/components/procurement/CurrencySelect";
+import SearchableSelect from "@/components/procurement/SearchableSelect";
 import {
   BusinessNeed,
   BusinessNeedPayload,
@@ -231,30 +233,19 @@ export default function EditBusinessNeedPage() {
                 Business Need Type
               </label>
 
-              <select
+              <SearchableSelect
                 value={form.business_need_type_id}
-                onChange={(event) =>
-                  handleChange(
-                    "business_need_type_id",
-                    event.target.value
-                  )
+                onChange={(id) =>
+                  handleChange("business_need_type_id", id)
                 }
+                options={types.map((type) => ({
+                  value: String(type.id),
+                  label: type.name,
+                }))}
+                placeholder="Select Type"
+                searchPlaceholder="Search type..."
                 required
-                className="w-full rounded-lg border px-3 py-2"
-              >
-                <option value="">
-                  Select Type
-                </option>
-
-                {types.map((type) => (
-                  <option
-                    key={type.id}
-                    value={type.id}
-                  >
-                    {type.name}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             {/* Title */}
@@ -408,6 +399,7 @@ export default function EditBusinessNeedPage() {
                     event.target.value
                   )
                 }
+                placeholder="Enter estimated amount"
                 required
                 className="w-full rounded-lg border px-3 py-2"
               />
@@ -419,22 +411,13 @@ export default function EditBusinessNeedPage() {
                 Currency
               </label>
 
-              <select
+              <CurrencySelect
                 value={form.currency}
-                onChange={(event) =>
-                  handleChange(
-                    "currency",
-                    event.target.value
-                  )
+                onChange={(code) =>
+                  handleChange("currency", code)
                 }
                 required
-                className="w-full rounded-lg border px-3 py-2"
-              >
-                <option value="USD">USD</option>
-                <option value="INR">INR</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-              </select>
+              />
             </div>
           </div>
         </div>

@@ -15,6 +15,7 @@ import {
 import StatusBadge from "@/components/procurement/StatusBadge";
 import WorkflowStepper from "@/components/procurement/WorkflowStepper";
 import LineItemsTable from "@/components/procurement/LineItemsTable";
+import SearchableSelect from "@/components/procurement/SearchableSelect";
 
 export default function PRDetailsPage() {
   const params = useParams();
@@ -105,6 +106,48 @@ export default function PRDetailsPage() {
   const vendorSelected = Boolean(
     pr.selected_vendor_name?.trim()
   );
+
+  const vendorOptions = [
+    ...(vendorSelected &&
+    pr.selected_vendor_name &&
+    pr.selected_vendor_name !== "Redefine Properties"
+      ? [
+          {
+            value: pr.selected_vendor_name,
+            label: pr.selected_vendor_name,
+          },
+        ]
+      : []),
+    {
+      value: "Redefine Properties",
+      label: "Redefine Properties",
+    },
+  ];
+
+  function round2(n: number) {
+    return Math.round(n * 100) / 100;
+  }
+
+  const originalAmount = Number(pr.total_amount || 0);
+  const negotiatedValue = Number(negotiatedAmount || 0);
+  const variance =
+    negotiatedValue > 0
+      ? round2(originalAmount - negotiatedValue)
+      : null;
+  const variancePct =
+    variance != null && originalAmount > 0
+      ? round2((variance / originalAmount) * 100)
+      : null;
+  const totalQty = (pr.line_items || []).reduce(
+    (sum, line) => sum + Number(line.quantity || 0),
+    0
+  );
+  const impliedUnit =
+    negotiatedValue > 0 && totalQty > 0
+      ? round2(negotiatedValue / totalQty)
+      : null;
+  const exceedsOriginal =
+    negotiatedValue > 0 && negotiatedValue > originalAmount;
 
   return (
     <main className="p-6">
@@ -267,19 +310,26 @@ export default function PRDetailsPage() {
           </h2>
 
           <div className="flex gap-3">
-            <input
-              value={
-                vendorSelected
-                  ? pr.selected_vendor_name ?? ""
-                  : vendor
+            <div
+              className={
+                vendorSelected || actionLoading
+                  ? "pointer-events-none flex-1 opacity-70"
+                  : "flex-1"
               }
-              disabled={actionLoading || vendorSelected}
-              onChange={(e) =>
-                setVendor(e.target.value)
-              }
-              placeholder="Vendor name"
-              className="flex-1 rounded-lg border px-3 py-2 disabled:cursor-not-allowed disabled:bg-gray-100"
-            />
+            >
+              <SearchableSelect
+                value={
+                  vendorSelected
+                    ? pr.selected_vendor_name ?? ""
+                    : vendor
+                }
+                onChange={(name) => setVendor(name)}
+                options={vendorOptions}
+                placeholder="Select vendor"
+                searchPlaceholder="Search vendor..."
+                required={!vendorSelected}
+              />
+            </div>
 
             <button
               disabled={
@@ -313,11 +363,42 @@ export default function PRDetailsPage() {
               Negotiation
             </h2>
 
+            <div className="mb-4 space-y-1 text-sm text-gray-600">
+              <p>
+                Original amount: {pr.currency}{" "}
+                {originalAmount.toLocaleString()}
+              </p>
+              {variance != null && (
+                <>
+                  <p>
+                    Price variance: {pr.currency}{" "}
+                    {variance.toLocaleString()}
+                    {variancePct != null
+                      ? ` (${variancePct}%)`
+                      : ""}
+                  </p>
+                  {impliedUnit != null && (
+                    <p>
+                      Implied avg unit (negotiated ÷ qty):{" "}
+                      {pr.currency} {impliedUnit.toLocaleString()}
+                    </p>
+                  )}
+                </>
+              )}
+              {exceedsOriginal && (
+                <p className="text-red-600">
+                  Negotiated amount cannot exceed the original
+                  PR amount.
+                </p>
+              )}
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2">
               <input
                 type="number"
                 min="0"
                 step="0.01"
+                max={originalAmount || undefined}
                 value={negotiatedAmount}
                 onChange={(e) =>
                   setNegotiatedAmount(
@@ -342,7 +423,8 @@ export default function PRDetailsPage() {
               disabled={
                 actionLoading ||
                 !negotiatedAmount ||
-                Number(negotiatedAmount) <= 0
+                Number(negotiatedAmount) <= 0 ||
+                exceedsOriginal
               }
               onClick={async () => {
                 setActionLoading(true);

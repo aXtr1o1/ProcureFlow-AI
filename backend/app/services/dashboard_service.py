@@ -20,6 +20,7 @@ from app.database.models import (
     InvoiceMatchRun,
     PurchaseOrderApproval,
 )
+from app.services.currency_service import to_usd
 
 
 class DashboardService:
@@ -204,16 +205,40 @@ class DashboardService:
 
         return float(value or 0)
 
+    def _sum_amount_in_usd(
+        self,
+        model,
+        amount_column,
+        currency_column,
+    ) -> float:
+        """
+        Sum amounts converted to USD using each row's currency.
+        """
+
+        query = self.db.query(
+            amount_column,
+            currency_column,
+        )
+        query = self._apply_user_filter(query, model)
+
+        total = 0.0
+
+        for amount, currency in query.all():
+            try:
+                total += to_usd(amount, currency)
+            except ValueError:
+                continue
+
+        return round(total, 2)
+
     # ==========================================================
     # Executive Dashboard
     # ==========================================================
 
     def get_executive_metrics(self) -> dict:
 
-        total_po_value = self._sum(
-            ProcurementPurchaseOrder,
-            ProcurementPurchaseOrder.total_amount,
-        )
+        # Exclude Cancelled / Rejected / Vendor Rejected POs
+        total_po_value = self._get_approved_po_value()
 
         # ------------------------------------------------------
         # Active POs
@@ -842,37 +867,43 @@ class DashboardService:
             pending_payment_invoice_query.scalar() or 0
         )
 
-        return {
-            "business_needs":
-                self._funnel_stage(
-                    BusinessNeed,
-                    value_column=(
-                        BusinessNeed.estimated_value
-                    ),
-                    status_column=BusinessNeed.status,
-                    pending_statuses=[
-                        "Draft",
-                        "Submitted",
-                    ],
-                    sla_breaches=(
-                        self._business_need_sla_breaches()
-                    ),
-                ),
+        business_needs = self._funnel_stage(
+            BusinessNeed,
+            status_column=BusinessNeed.status,
+            pending_statuses=[
+                "Draft",
+                "Submitted",
+            ],
+            sla_breaches=(
+                self._business_need_sla_breaches()
+            ),
+        )
+        business_needs["value"] = self._sum_amount_in_usd(
+            BusinessNeed,
+            BusinessNeed.estimated_value,
+            BusinessNeed.currency,
+        )
 
-            "purchase_requisitions":
-                self._funnel_stage(
-                    PurchaseRequisition,
-                    value_column=(
-                        PurchaseRequisition.total_amount
-                    ),
-                    status_column=(
-                        PurchaseRequisition.status
-                    ),
-                    pending_statuses=[
-                        "Draft",
-                        "Submitted",
-                    ],
-                ),
+        purchase_requisitions = self._funnel_stage(
+            PurchaseRequisition,
+            status_column=PurchaseRequisition.status,
+            pending_statuses=[
+                "Draft",
+                "Submitted",
+            ],
+        )
+        purchase_requisitions["value"] = (
+            self._sum_amount_in_usd(
+                PurchaseRequisition,
+                PurchaseRequisition.total_amount,
+                PurchaseRequisition.currency,
+            )
+        )
+
+        return {
+            "business_needs": business_needs,
+
+            "purchase_requisitions": purchase_requisitions,
 
             "purchase_orders":
                 self._funnel_stage(
@@ -998,7 +1029,25 @@ class DashboardService:
         )
 
         closed_pos = get_po_status_count("Closed")
-        cancelled_pos = get_po_status_count("Cancelled")
+        cancelled_pos = int(get_po_status_count("Cancelled"))
+
+        rejected_pos = (
+            self.db.query(func.count(ProcurementPurchaseOrder.id))
+            .join(
+                PurchaseRequisition,
+                ProcurementPurchaseOrder.purchase_requisition_id
+                == PurchaseRequisition.id,
+            )
+            .filter(
+                PurchaseRequisition.requester_id == self.user_id,
+                ProcurementPurchaseOrder.status.in_(
+                    ["Rejected", "Vendor Rejected"]
+                ),
+            )
+            .scalar()
+            or 0
+        )
+        rejected_pos = int(rejected_pos)
 
         # Pending approvals = POs waiting for approval
         # (approval rows are only created on Approve/Reject)
@@ -1161,6 +1210,7 @@ class DashboardService:
             "open_pos": open_pos,
             "closed_pos": closed_pos,
             "cancelled_pos": cancelled_pos,
+            "rejected_pos": rejected_pos,
             "pending_approvals": pending_approvals,
             "average_po_creation_time": (
                 float(average_po_creation_time)

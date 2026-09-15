@@ -3,9 +3,12 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.security import get_current_user
 from app.database.database import get_db
+from app.database.models import User
 from app.services.invoice_service import InvoiceService
 from app.schemas.search_schema import SearchResponse
+
 
 router = APIRouter(
     prefix="/search",
@@ -44,12 +47,19 @@ def _serialize_db_invoice(invoice, line_items) -> Dict[str, Any]:
     }
 
 
-def _format_invoices(db: Session, invoices: List) -> List[Dict[str, Any]]:
+def _format_invoices(
+    db: Session,
+    invoices: List,
+    user_id: int,
+) -> List[Dict[str, Any]]:
     invoice_service = InvoiceService(db)
     results = []
 
     for invoice in invoices:
-        line_items = invoice_service.get_invoice_line_items(invoice.id)
+        line_items = invoice_service.get_invoice_line_items(
+            invoice.id,
+            user_id,
+        )
         results.append(_serialize_db_invoice(invoice, line_items))
 
     return results
@@ -65,14 +75,15 @@ def _format_invoices(db: Session, invoices: List) -> List[Dict[str, Any]]:
 )
 def search_documents(
     query: str = Query(..., min_length=1),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Search invoices stored in the SQLite database.
     """
     invoice_service = InvoiceService(db)
-    invoices = invoice_service.search_invoices(query)
-    formatted_results = _format_invoices(db, invoices)
+    invoices = invoice_service.search_invoices(query, current_user.id)
+    formatted_results = _format_invoices(db, invoices, current_user.id)
 
     return SearchResponse(
         query=query,
@@ -90,11 +101,14 @@ def search_documents(
 )
 def search_invoice(
     invoice_number: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     invoice_service = InvoiceService(db)
-    invoices = invoice_service.search_invoices_by_number(invoice_number)
-    formatted_results = _format_invoices(db, invoices)
+    invoices = invoice_service.search_invoices_by_number(
+        invoice_number, current_user.id
+    )
+    formatted_results = _format_invoices(db, invoices, current_user.id)
 
     return SearchResponse(
         query=invoice_number,
@@ -112,11 +126,14 @@ def search_invoice(
 )
 def search_vendor(
     vendor_name: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     invoice_service = InvoiceService(db)
-    invoices = invoice_service.search_invoices_by_vendor(vendor_name)
-    formatted_results = _format_invoices(db, invoices)
+    invoices = invoice_service.search_invoices_by_vendor(
+        vendor_name, current_user.id
+    )
+    formatted_results = _format_invoices(db, invoices, current_user.id)
 
     if not formatted_results:
         raise HTTPException(
