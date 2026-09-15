@@ -179,18 +179,27 @@ export function AssistantChatProvider({ children }: { children: ReactNode }) {
     ]);
 
     setTyping(true);
-    setStatus("Searching your invoice documents…");
+    setStatus("Checking your procurement data…");
 
     const controller = new AbortController();
     abortRef.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), 120000);
 
     try {
+      const token =
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("token");
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${API_URL}/gemini/chat`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({
           message: trimmed,
         }),

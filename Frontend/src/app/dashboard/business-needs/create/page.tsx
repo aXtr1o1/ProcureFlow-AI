@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import CurrencySelect from "@/components/procurement/CurrencySelect";
+import SearchableSelect from "@/components/procurement/SearchableSelect";
 import {
   BusinessNeedType,
   createBusinessNeed,
@@ -26,7 +28,7 @@ export default function CreateBusinessNeedPage() {
     location: "",
     cost_center: "",
     required_by_date: "",
-    estimated_value: "0",
+    estimated_value: "",
     currency: "USD",
   });
 
@@ -55,6 +57,15 @@ export default function CreateBusinessNeedPage() {
 
     setLoading(true);
     setError("");
+
+    if (
+      form.estimated_value.trim() === "" ||
+      Number.isNaN(Number(form.estimated_value))
+    ) {
+      setError("Please enter a valid estimated value.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const result =
@@ -110,30 +121,19 @@ export default function CreateBusinessNeedPage() {
             Business Need Type
           </label>
 
-          <select
-            required
+          <SearchableSelect
             value={form.business_need_type_id}
-            onChange={(e) =>
-              updateField(
-                "business_need_type_id",
-                e.target.value
-              )
+            onChange={(id) =>
+              updateField("business_need_type_id", id)
             }
-            className="w-full rounded-lg border px-3 py-2"
-          >
-            <option value="">
-              Select type
-            </option>
-
-            {types.map((type) => (
-              <option
-                key={type.id}
-                value={type.id}
-              >
-                {type.name}
-              </option>
-            ))}
-          </select>
+            options={types.map((type) => ({
+              value: String(type.id),
+              label: type.name,
+            }))}
+            placeholder="Select type"
+            searchPlaceholder="Search type..."
+            required
+          />
         </div>
 
         <div>
@@ -227,6 +227,8 @@ export default function CreateBusinessNeedPage() {
                   e.target.value
                 )
               }
+              placeholder="Enter estimated amount"
+              required
               className="w-full rounded-lg border px-3 py-2"
             />
           </div>
@@ -236,15 +238,12 @@ export default function CreateBusinessNeedPage() {
               Currency
             </label>
 
-            <input
+            <CurrencySelect
               value={form.currency}
-              onChange={(e) =>
-                updateField(
-                  "currency",
-                  e.target.value.toUpperCase()
-                )
+              onChange={(code) =>
+                updateField("currency", code)
               }
-              className="w-full rounded-lg border px-3 py-2"
+              required
             />
           </div>
         </div>

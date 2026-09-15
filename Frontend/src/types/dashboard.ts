@@ -113,6 +113,7 @@ export interface POIntelligence {
   open_pos: number;
   closed_pos: number;
   cancelled_pos: number;
+  rejected_pos: number;
   pending_approvals: number;
   pending_approval_value: number;
 

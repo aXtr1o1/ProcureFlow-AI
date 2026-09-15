@@ -28,16 +28,23 @@ class Settings(BaseSettings):
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440 
 
-   # Canonical default currency
+    # Canonical default currency
     DEFAULT_CURRENCY: str = "USD"
 
-    # FX conversion rates to USD
-    FX_TO_USD_USD: float
-    FX_TO_USD_ZAR: float
-    FX_TO_USD_AED: float
-    FX_TO_USD_EUR: float
-    FX_TO_USD_GBP: float
-    FX_TO_USD_SAR: float
+    # Live FX feed (USD base: 1 USD = N units of currency)
+    FX_RATES_URL: str = (
+        "https://cdn.jsdelivr.net/npm/@fawazahmed0/"
+        "currency-api@latest/v1/currencies/usd.min.json"
+    )
+    FX_CACHE_TTL_SECONDS: int = 21600
+
+    # Optional overrides: USD per 1 unit of currency
+    FX_TO_USD_USD: float = 1.0
+    FX_TO_USD_ZAR: float | None = None
+    FX_TO_USD_AED: float | None = None
+    FX_TO_USD_EUR: float | None = None
+    FX_TO_USD_GBP: float | None = None
+    FX_TO_USD_SAR: float | None = None
 
     class Config:
         env_file = ".env"

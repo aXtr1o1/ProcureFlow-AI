@@ -5,10 +5,16 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
+from app.database.models import User
+from app.core.security import get_current_user
 from app.services.gemini_service import GeminiService
 from app.services.azure_search_service import AzureSearchService
 from app.services.invoice_service import InvoiceService
 from app.services.currency_service import to_usd, normalize_currency_code
+from app.services.assistant_ops_service import (
+    AssistantOpsService,
+    detect_intent,
+)
 
 
 class ChatRequest(BaseModel):
@@ -158,12 +164,12 @@ def test_connection():
 def chat(
     request: ChatRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Assistant RAG flow:
-    1) LLM rewrites the user question into an optimized Azure AI Search query
-    2) Azure AI Search retrieves documents (including blob_url)
-    3) LLM answers using the retrieved information
+    Assistant flow:
+    1) Operational intents (pending approvals, duplicates, etc.) → live DB
+    2) Otherwise RAG: rewrite → Azure AI Search → Gemini grounded answer
     """
     gemini_service = GeminiService()
     search_service = AzureSearchService(db)
@@ -171,6 +177,25 @@ def chat(
     message = (request.message or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message is required.")
+
+    # ----------------------------------------------------------
+    # Operational DB intents (do not invent generic definitions)
+    # ----------------------------------------------------------
+    intent = detect_intent(message)
+    if intent:
+        answer, label = AssistantOpsService(
+            db,
+            current_user.id,
+        ).answer(intent)
+        return {
+            "success": True,
+            "response": str(answer or ""),
+            "search_query": label,
+            "sources": [],
+            "total_sources": 0,
+            "warning": None,
+            "intent": intent,
+        }
 
     search_query = message
     documents: List[dict] = []
@@ -227,13 +252,16 @@ def chat(
                 search_query=search_query,
             )
         else:
-            answer = gemini_service.chat(
-                f"""The user asked: {message}
-
-Azure AI Search returned no usable documents.
-{f"Search note: {search_error}" if search_error else ""}
-Answer helpfully based on general invoice/procurement knowledge,
-and say that no indexed invoice documents were retrieved."""
+            note = f" Search note: {search_error}." if search_error else ""
+            answer = (
+                "I could not find matching **indexed invoice documents** "
+                f"for that question.{note}\n\n"
+                "Try one of these instead:\n"
+                "- List pending approvals\n"
+                "- Find duplicate invoices\n"
+                "- Summarize invoices this month\n"
+                "- Upcoming deadlines\n\n"
+                "Or ask about a specific vendor / invoice number in your documents."
             )
 
         return {

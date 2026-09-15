@@ -521,23 +521,23 @@ export default function PurchaseOrderDetailsPage() {
 
           <p className="text-sm text-red-700">
             The vendor has rejected this Purchase
-            Order. You can cancel it below to close
-            this workflow.
+            Order. This workflow is closed — no further
+            cancel step is required.
           </p>
         </div>
       )}
 
       {/* =====================================================
           Cancel Purchase Order
-          Allowed: Created / Approved / Acknowledged /
-          Vendor Rejected -> Cancelled
+          Allowed: Created / Approved / Acknowledged
+          -> Cancelled
+          (Vendor Rejected is already a closed outcome)
       ====================================================== */}
 
       {[
         "Created",
         "Approved",
         "Acknowledged",
-        "Vendor Rejected",
       ].includes(po.status) && (
         <div className="mt-6 rounded-lg border bg-white p-6">
           <h2 className="mb-2 text-lg font-semibold">
@@ -546,18 +546,40 @@ export default function PurchaseOrderDetailsPage() {
 
           <p className="mb-4 text-sm text-gray-500">
             Cancel this Purchase Order. It will be
-            counted under Cancelled POs in PO
+            counted under Cancelled / Rejected POs in PO
             Intelligence.
           </p>
 
           <button
             type="button"
             disabled={actionLoading}
-            onClick={() =>
-              execute(() =>
-                cancelPurchaseOrder(po.id)
-              )
-            }
+            onClick={async () => {
+              setActionLoading(true);
+              setError("");
+
+              try {
+                await cancelPurchaseOrder(po.id);
+
+                const prId = po.purchase_requisition_id;
+                if (prId) {
+                  router.push(
+                    `/dashboard/purchase-requisitions/${prId}`
+                  );
+                } else {
+                  router.push(
+                    "/dashboard/purchase-requisitions"
+                  );
+                }
+              } catch (err) {
+                setError(
+                  err instanceof Error
+                    ? err.message
+                    : "Failed to cancel Purchase Order."
+                );
+              } finally {
+                setActionLoading(false);
+              }
+            }}
             className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {actionLoading

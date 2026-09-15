@@ -105,6 +105,7 @@ class POIntelligenceResponse(BaseModel):
     open_pos: int = 0
     closed_pos: int = 0
     cancelled_pos: int = 0
+    rejected_pos: int = 0
 
     pending_approvals: int = 0
 

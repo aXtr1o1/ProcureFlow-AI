@@ -9,6 +9,7 @@ interface POIntelligence {
   open_pos: number;
   closed_pos: number;
   cancelled_pos: number;
+  rejected_pos: number;
   pending_approvals: number;
   average_po_creation_time: number | null;
   average_po_approval_time: number | null;
@@ -112,6 +113,11 @@ export default function POIntelligencePage() {
           <Card
             title="Cancelled POs"
             value={po.cancelled_pos}
+          />
+
+          <Card
+            title="Rejected POs"
+            value={po.rejected_pos ?? 0}
           />
 
           <Card

@@ -19,6 +19,9 @@ from app.services.audit_service import AuditService
 from app.services.currency_service import (
     convert_invoice_amounts_to_usd,
 )
+from app.services.purchase_requisition_service import (
+    PurchaseRequisitionService,
+)
 
 PRE_SEND_PO_STATUSES = {
     "Created",
@@ -736,20 +739,25 @@ class PurchaseOrderService:
             purchase_requisition.currency or "USD"
         ).strip().upper()
 
+        negotiated_total = float(
+            purchase_requisition.negotiated_amount or 0
+        )
+
+        # Prorate original line unit prices by negotiated /
+        # original so qty × unit_price sums to negotiated total.
+        prorated_lines = (
+            PurchaseRequisitionService._prorate_negotiated_lines(
+                purchase_requisition.line_items,
+                negotiated_total,
+            )
+        )
+
         conversion_data = {
             "currency": original_currency,
-            "subtotal": purchase_requisition.negotiated_amount or 0,
+            "subtotal": negotiated_total,
             "tax": 0,
-            "total_amount": purchase_requisition.negotiated_amount or 0,
-            "line_items": [
-                {
-                    "description": item.description,
-                    "quantity": item.quantity or 0,
-                    "unit_price": item.unit_price or 0,
-                    "amount": item.amount or 0,
-                }
-                for item in purchase_requisition.line_items
-            ],
+            "total_amount": negotiated_total,
+            "line_items": prorated_lines,
         }
 
         converted_data = convert_invoice_amounts_to_usd(

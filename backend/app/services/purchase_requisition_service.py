@@ -76,6 +76,100 @@ class PurchaseRequisitionService:
 
         return sorted(signature)
 
+    @staticmethod
+    def _line_field(item, field: str, default=0):
+        if isinstance(item, dict):
+            return item.get(field, default)
+        return getattr(item, field, default)
+
+    @staticmethod
+    def _line_original_total(line_items) -> float:
+        total = 0.0
+        for item in line_items or []:
+            qty = float(
+                PurchaseRequisitionService._line_field(
+                    item, "quantity", 0
+                )
+                or 0
+            )
+            price = float(
+                PurchaseRequisitionService._line_field(
+                    item, "unit_price", 0
+                )
+                or 0
+            )
+            total += qty * price
+        return round(total, 2)
+
+    @staticmethod
+    def _prorate_negotiated_lines(
+        line_items,
+        negotiated_amount: float,
+    ) -> list[dict]:
+        """
+        Scale each line so amount = quantity × unit_price
+        and sum(amount) == negotiated_amount, using
+        factor = negotiated / original.
+        """
+        original = (
+            PurchaseRequisitionService._line_original_total(
+                line_items
+            )
+        )
+        if original <= 0:
+            raise ValueError(
+                "PR total amount must be greater than zero."
+            )
+
+        negotiated = round(float(negotiated_amount or 0), 2)
+        if negotiated <= 0:
+            raise ValueError(
+                "Negotiated amount must be greater than zero."
+            )
+
+        factor = negotiated / original
+        items = list(line_items or [])
+        rows: list[dict] = []
+        running = 0.0
+
+        for idx, item in enumerate(items):
+            qty = float(
+                PurchaseRequisitionService._line_field(
+                    item, "quantity", 0
+                )
+                or 0
+            )
+            old_unit = float(
+                PurchaseRequisitionService._line_field(
+                    item, "unit_price", 0
+                )
+                or 0
+            )
+            desc = PurchaseRequisitionService._line_field(
+                item, "description", None
+            )
+
+            if idx == len(items) - 1:
+                amount = round(negotiated - running, 2)
+                unit = (
+                    round(amount / qty, 4) if qty else 0.0
+                )
+            else:
+                unit = round(old_unit * factor, 4)
+                amount = round(qty * unit, 2)
+                running += amount
+
+            rows.append(
+                {
+                    "description": desc,
+                    "quantity": qty,
+                    "unit_price": unit,
+                    "amount": amount,
+                }
+            )
+
+        return rows
+
     def _find_duplicate_in_progress_pr(
         self,
         business_need_id: int,
@@ -463,13 +557,24 @@ class PurchaseRequisitionService:
                 detail="Negotiated amount must be greater than zero.",
             )
 
-        original_amount = pr.total_amount or 0
+        # Prefer line-based total (qty × unit_price); fall back
+        # to stored total_amount if lines are missing.
+        original_amount = self._line_original_total(
+            pr.line_items
+        )
+        if original_amount <= 0:
+            original_amount = round(
+                float(pr.total_amount or 0),
+                2,
+            )
 
         if original_amount <= 0:
             raise HTTPException(
                 status_code=409,
                 detail="PR total amount must be greater than zero.",
             )
+
+        negotiated_amount = round(float(negotiated_amount), 2)
 
         if negotiated_amount > original_amount:
             raise HTTPException(
@@ -479,6 +584,9 @@ class PurchaseRequisitionService:
                     "the original PR amount."
                 ),
             )
+
+        # Align stored PR total with line-based original
+        pr.total_amount = original_amount
 
         # ======================================================
         # Calculate price variance
@@ -493,6 +601,18 @@ class PurchaseRequisitionService:
             (price_variance / original_amount) * 100,
             2,
         )
+
+        # Validate prorated lines reconcile to negotiated total
+        try:
+            self._prorate_negotiated_lines(
+                pr.line_items,
+                negotiated_amount,
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=409,
+                detail=str(error),
+            ) from error
 
         # ======================================================
         # Record negotiation
